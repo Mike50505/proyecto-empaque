@@ -1,0 +1,157 @@
+body:has(.app.tv){overflow:hidden}
+.app.tv{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.tv .main-wrap{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.tv .suite-header{position:relative;top:auto;z-index:2;flex:0 0 auto;min-height:68px;padding:9px clamp(18px,2.2vw,38px)}
+.tv .suite-brand img{width:76px;height:36px}
+.tv .suite-brand>span{font-size:16px}
+.tv .suite-brand small{font-size:10px}
+.tv .suite-nav,.tv [data-mesa-palette],.tv .suite-actions>button[aria-label="Cerrar sesión"]{display:none!important}
+.tv .suite-actions{margin-left:auto}
+.tv .floor-week-control{display:flex;align-items:center;gap:7px;margin-right:6px;white-space:nowrap;font-size:11px;color:var(--muted)}
+.tv .floor-week-control select{width:auto;min-width:125px;height:34px;min-height:34px;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px}
+.tv .floor-fullscreen-toggle{display:inline-flex;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--text);font-size:13px}
+.tv .floor-fullscreen-toggle:hover{background:var(--soft);color:var(--blue)}
+.tv .context-bar{flex:0 0 auto;max-width:none;padding:7px clamp(20px,2.5vw,42px) 0;font-size:11px}
+.tv .context-user{display:none}
+.tv main{width:100%;max-width:none;flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:clamp(12px,1.5vh,20px) clamp(18px,2.5vw,44px) 10px}
+.tv .page-heading{flex:0 0 auto;min-height:86px;margin-bottom:clamp(10px,1.4vh,16px);padding:clamp(13px,1.5vh,20px) clamp(19px,2vw,34px);border-radius:16px}
+.tv .page-heading h1{font-size:clamp(26px,2.2vw,38px);line-height:1.1;margin:5px 0 6px}
+.tv .page-heading p{font-size:clamp(12px,1vw,15px);margin:0}
+.tv .page-heading .eyebrow{font-size:10px}
+.tv .page-heading .heading-actions .secondary{min-height:42px}
+.tv .group-tabs{flex:0 0 auto;display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 clamp(10px,1.3vh,15px);padding:0 0 2px;overflow-x:auto;scrollbar-width:thin}
+.tv .group-tabs>button{height:clamp(42px,5vh,52px);min-width:max-content;padding:0 clamp(16px,1.6vw,26px);border-radius:11px;font-size:clamp(13px,1vw,16px)}
+.tv .group-tabs>button:first-child{min-width:max-content}
+.tv .group-tabs small{font-size:12px}
+.tv .metrics{flex:0 0 auto;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(10px,1.25vw,20px);margin:0 0 clamp(10px,1.4vh,16px)}
+.tv .metric,.tv .metric.green{min-width:0;min-height:clamp(94px,12vh,132px);padding:clamp(13px,1.4vw,22px);border-radius:14px}
+.tv .metric-title{font-size:clamp(12px,.95vw,15px);line-height:1.3}
+.tv .metric strong{font-size:clamp(27px,2.5vw,42px);line-height:1.05;margin:9px 0 4px}
+.tv .metric small{font-size:clamp(10px,.8vw,13px)}
+.tv .panel{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;border-radius:15px}
+.tv .panel-head{flex:0 0 auto;padding:clamp(10px,1.2vh,15px) clamp(16px,1.6vw,27px)}
+.tv .panel-head h2{font-size:clamp(15px,1.2vw,19px)}
+.tv .panel-head p{font-size:clamp(11px,.85vw,13px)}
+.tv .table-scroll{flex:1 1 auto;min-height:0;overflow:auto}
+.tv table{width:100%;font-size:clamp(13px,.95vw,17px)}
+.tv th{position:sticky;top:0;z-index:1;padding:clamp(9px,1vh,13px) clamp(10px,1vw,17px);font-size:clamp(10px,.75vw,13px)}
+.tv td{padding:clamp(9px,1.05vh,15px) clamp(10px,1vw,17px)}
+.tv .part-number{font-size:clamp(14px,1.1vw,19px)}
+.tv .client-name{font-size:clamp(13px,1vw,17px)}
+.tv .part-detail,.tv .year{font-size:clamp(10px,.8vw,13px)}
+.tv .priority,.tv .week-tag{font-size:clamp(10px,.8vw,13px)}
+.tv .row-progress>span{font-size:clamp(11px,.85vw,14px)}
+.tv .table-footer{flex:0 0 auto;display:flex;justify-content:space-between;gap:18px;padding:10px 18px;font-size:clamp(10px,.75vw,12px)}
+.tv .bottom-note{flex:0 0 auto;margin:8px 2px 0;padding:0;font-size:clamp(10px,.75vw,12px)}
+.tv .app-footer{display:none}
+.tv .sheet-clients,.tv .sheet-controls,.tv .pagination{display:none}
+@media(max-height:760px){
+ .tv .suite-header{min-height:56px;padding-block:6px}
+ .tv .suite-brand img{height:30px}
+ .tv .context-bar{display:none}
+ .tv main{padding-top:8px;padding-bottom:7px}
+ .tv .page-heading{min-height:70px;margin-bottom:8px;padding:10px 18px}
+ .tv .group-tabs{margin-bottom:8px}
+ .tv .metrics{margin-bottom:8px}
+ .tv .metric,.tv .metric.green{min-height:82px;padding:10px 14px}
+ .tv .metric strong{font-size:clamp(23px,2vw,32px);margin:5px 0 2px}
+ .tv .panel-head{padding:8px 15px}
+ .tv th,.tv td{padding-top:7px;padding-bottom:7px}
+ .tv .bottom-note{display:none}
+}
+@media(max-width:760px){
+ .tv .floor-week-control{gap:0;margin-right:0}
+ .tv .floor-week-control>span{display:none}
+ .tv .floor-week-control select{min-width:112px;font-size:11px}
+ .tv .suite-header{min-height:54px;padding-inline:12px}
+ .tv .suite-brand img{width:60px}
+ .tv .suite-brand>span{font-size:13px;padding-left:8px}
+ .tv .floor-fullscreen-toggle{font-size:0;width:42px;padding:0}
+ .tv .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .tv .metric,.tv .metric.green{min-height:88px}
+ .tv .page-heading{min-height:70px;padding:11px 14px}
+ .tv .page-heading h1{font-size:24px}
+ .tv .page-heading p{font-size:11px}
+ .tv .panel-head p{display:none}
+ .tv .table-footer{display:block;line-height:1.6}
+ .tv .table-footer>span{display:block}
+}
+@media(prefers-reduced-motion:reduce){.tv *{scroll-behavior:auto!important}}
+
+.tv .floor-table table{min-width:100%;table-layout:fixed}
+.tv .floor-table th,.tv .floor-table td{display:table-cell;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv .floor-table th:nth-child(1),.tv .floor-table td:nth-child(1){width:15%}
+.tv .floor-table th:nth-child(2),.tv .floor-table td:nth-child(2){width:14%}
+.tv .floor-table th:nth-child(3),.tv .floor-table td:nth-child(3){width:8%}
+.tv .floor-table th:nth-child(4),.tv .floor-table td:nth-child(4){width:9%}
+.tv .floor-table th:nth-child(5),.tv .floor-table td:nth-child(5){width:8%}
+.tv .floor-table th:nth-child(6),.tv .floor-table td:nth-child(6){width:8%}
+.tv .floor-table th:nth-child(7),.tv .floor-table td:nth-child(7){width:8%}
+.tv .floor-table th:nth-child(8),.tv .floor-table td:nth-child(8){width:8%}
+.tv .floor-table th:nth-child(9),.tv .floor-table td:nth-child(9){width:14%}
+.tv .floor-table th:nth-child(10),.tv .floor-table td:nth-child(10){width:8%}
+.tv .floor-table td{padding:5px 8px;font-size:clamp(12px,.85vw,15px)}
+.tv .floor-table td>b{font-size:clamp(12px,.9vw,16px)}
+.tv .floor-table .order-context{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;font-size:10px}
+.tv .floor-table .week-tag{font-size:10px}
+.tv .floor-table .row-progress{min-width:0}
+.tv .floor-table .row-progress .progress{height:5px;margin:3px 0 0}
+.tv .floor-table .capture-button{min-height:29px;padding:4px 7px;font-size:10px}
+
+/* Keep the line display focused on the live orders. */
+.tv .suite-header{min-height:46px;padding:4px clamp(12px,1.6vw,24px)}
+.tv .suite-brand{gap:8px}
+.tv .suite-brand img{width:57px;height:29px}
+.tv .suite-brand>span{font-size:13px;padding-left:8px}
+.tv .suite-brand small{display:none}
+.tv .floor-fullscreen-toggle{min-height:34px;padding:0 10px;font-size:11px;border-radius:8px}
+.tv .context-bar,.tv .page-heading{display:none!important}
+.tv main{padding:8px clamp(12px,1.4vw,22px) 5px}
+.tv .group-tabs{gap:6px;margin-bottom:7px;padding-bottom:0}
+.tv .group-tabs>button{height:34px;padding:0 13px;border-radius:8px;font-size:12px}
+.tv .group-tabs small{font-size:10px}
+.tv .metrics{gap:8px;margin-bottom:7px}
+.tv .metric,.tv .metric.green{min-height:58px;padding:7px 12px;border-radius:10px}
+.tv .metric-title{font-size:10px;line-height:1.1}
+.tv .metric-title svg{width:13px;height:13px}
+.tv .metric strong{font-size:23px;line-height:1;margin:4px 0 0}
+.tv .metric small{display:none}
+.tv .panel{border-radius:11px}
+.tv .panel-head{min-height:35px;padding:5px 12px}
+.tv .panel-head h2{font-size:13px;margin:0}
+.tv .panel-head p,.tv .panel-head .panel-tools{display:none}
+.tv .table-scroll{overflow:hidden}
+.tv table{width:100%;table-layout:fixed;font-size:13px}
+.tv th{padding:5px 8px;font-size:10px}
+.tv td{padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv .part-number{font-size:14px}
+.tv .client-name{font-size:12px}
+.tv .part-detail,.tv .year{font-size:10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tv .priority,.tv .week-tag{font-size:10px;padding:3px 5px}
+.tv .row-progress{min-width:0}
+.tv .row-progress>span{font-size:10px}
+.tv .table-footer{padding:5px 10px;font-size:10px}
+.tv .capture-button{display:inline-flex;min-height:32px;padding:6px 10px;border-radius:8px;font-size:11px;white-space:nowrap}
+.tv th:nth-child(1),.tv td:nth-child(1){width:9%}
+.tv th:nth-child(2),.tv td:nth-child(2){width:20%}
+.tv th:nth-child(3),.tv td:nth-child(3){width:22%}
+.tv th:nth-child(4),.tv td:nth-child(4){width:10%}
+.tv th:nth-child(6),.tv td:nth-child(6){width:12%}
+.tv th:nth-child(9),.tv td:nth-child(9){width:12%}
+.tv th:nth-child(10),.tv td:nth-child(10){width:15%}
+.tv .bottom-note{display:none}
+.tv .app-footer{display:none}
+@media(max-height:760px){
+ .tv .suite-header{min-height:40px;padding-block:2px}
+ .tv .suite-brand img{height:25px}
+ .tv .floor-fullscreen-toggle{min-height:30px}
+ .tv main{padding-block:5px 3px}
+ .tv .metric,.tv .metric.green{min-height:51px;padding:5px 10px}
+ .tv .metric strong{font-size:20px}
+ .tv .group-tabs{margin-bottom:5px}
+ .tv .metrics{margin-bottom:5px}
+ .tv .panel-head{min-height:31px;padding:4px 10px}
+ .tv th,.tv td{padding-top:4px;padding-bottom:4px}
+ .tv .table-footer{padding:3px 9px}
+ .tv .capture-button{min-height:28px;padding:4px 7px;font-size:10px}
+}

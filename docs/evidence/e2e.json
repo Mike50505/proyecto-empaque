@@ -1,0 +1,28 @@
+{
+  "synthetic": true,
+  "result": "passed",
+  "browser": "Chromium / Edge headless",
+  "viewports": [
+    "1440x1000",
+    "375x812",
+    "1440x900"
+  ],
+  "flows": [
+    "login",
+    "capture 200",
+    "capture 100",
+    "pending 0",
+    "xlsx export",
+    "dashboard",
+    "history",
+    "mobile overflow",
+    "TV read-only UI",
+    "reduced motion",
+    "import 10 orders",
+    "publish in same action",
+    "open imported orders in capture",
+    "capture imported order",
+    "reload imported capture"
+  ],
+  "pageErrors": []
+}

@@ -1,0 +1,35 @@
+.client-picker{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:thin}
+.client-picker-item{display:flex;align-items:stretch;flex:0 0 auto;gap:0}
+.client-picker .client-picker-all,.client-picker .client-picker-main{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font-size:12px;white-space:nowrap}
+.client-picker .client-picker-all.selected,.client-picker .client-picker-main.selected{background:var(--soft);border-color:var(--blue);color:var(--blue)}
+.client-picker .client-picker-main:hover,.client-picker .client-picker-all:hover{background:var(--soft);color:var(--blue)}
+.client-picker-item:not(.has-subclients) .client-picker-main{border-radius:9px}
+.client-picker-item.has-subclients .client-picker-main{border-top-right-radius:0;border-bottom-right-radius:0}
+.client-picker-current{font-size:10px;font-weight:500;color:inherit;opacity:.85}
+.client-picker-floor{padding:0;border:0;background:transparent;gap:7px;margin-bottom:7px}
+.client-picker-floor .client-picker-all,.client-picker-floor .client-picker-main{height:34px;min-height:34px;padding:0 12px;border-radius:8px;font-size:12px}
+.tv .client-picker-floor>.client-picker-all{flex:0 0 auto;width:auto;min-width:max-content}
+.client-picker-floor .client-picker-item{flex:0 0 auto}
+.client-picker-floor .client-picker-item:not(.has-subclients) .client-picker-main{border-radius:8px}
+.client-picker-floor .client-picker-item.has-subclients .client-picker-main{border-top-right-radius:0;border-bottom-right-radius:0}
+.client-picker .has-subclients{border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:none}
+.client-picker .has-subclients:hover{background:var(--soft)}
+.client-picker .has-subclients.is-active{background:var(--soft);border-color:var(--blue)}
+.client-picker .has-subclients .client-picker-main{border:0;border-radius:0;background:transparent}
+.client-picker .has-subclients .client-picker-main{padding-right:3px;min-height:36px;box-shadow:none}
+.client-picker .has-subclients .client-subfilter-toggle{display:flex;align-items:center;justify-content:center;align-self:stretch;width:32px;min-width:32px;min-height:0;padding:0;border:0;border-radius:0 8px 8px 0;background:transparent;color:var(--muted);box-shadow:none;outline:none}
+.client-picker .has-subclients.is-active .client-subfilter-toggle{color:var(--blue)}
+.client-picker .has-subclients :focus-visible{outline:none}
+.client-picker .has-subclients .client-picker-main:focus-visible,.client-picker .has-subclients .client-subfilter-toggle:focus-visible{box-shadow:inset 0 -2px var(--blue)}
+.client-picker-floor .has-subclients{border-radius:8px}
+.client-picker-floor .has-subclients .client-picker-main{height:32px;min-height:32px}
+.client-submenu{position:fixed;inset:auto;margin:0;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 8px 24px #0002;overflow-y:auto}
+.client-submenu::backdrop{background:transparent}
+.client-submenu button{display:block;width:100%;min-height:38px;padding:8px 12px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font-size:12px;white-space:nowrap}
+.client-submenu button:hover,.client-submenu button:focus-visible,.client-submenu button[aria-checked="true"]{background:var(--soft);color:var(--blue);outline:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:650px){
+ .client-picker-orders{padding:10px;gap:5px}
+ .client-picker .client-picker-all,.client-picker .client-picker-main{min-height:36px;padding:0 10px;font-size:11px}
+ .client-picker .has-subclients .client-picker-main{height:34px;min-height:34px}
+}

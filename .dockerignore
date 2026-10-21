@@ -1,0 +1,9 @@
+.venv
+.env
+private
+frontend/node_modules
+*.xlsx
+*.pbix
+*.txt
+!requirements.txt
+!requirements.lock.txt

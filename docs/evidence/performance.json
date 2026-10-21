@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "database": "PostgreSQL",
+  "rows": 1001,
+  "captures": 1000,
+  "allocations": 1000,
+  "seconds": 0.146,
+  "queries": 11,
+  "scope": "Single balance request, local machine; not a user-capacity guarantee."
+}

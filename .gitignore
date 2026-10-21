@@ -1,0 +1,15 @@
+.venv/
+.env
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+private/
+*.sqlite3
+staticfiles/
+test-results/
+outputs/
+*.log
+.env.*
+!.env.example
+gemini-code-*.txt

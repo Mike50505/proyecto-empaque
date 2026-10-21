@@ -1,0 +1,33 @@
+name: empaques-mesa
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-empaques}
+      POSTGRES_USER: ${POSTGRES_USER:-empaques}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  backend:
+    build: {context: ., dockerfile: backend/Dockerfile}
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db: {condition: service_healthy}
+    volumes: ["./private:/app/private", "staticfiles:/app/staticfiles"]
+    ports: ["127.0.0.1:58000:8000"]
+  frontend:
+    build: {context: ./frontend}
+    depends_on: [backend]
+    ports: ["127.0.0.1:58080:80"]
+    volumes: ["staticfiles:/var/www/static:ro"]
+volumes:
+  pgdata:
+  staticfiles:

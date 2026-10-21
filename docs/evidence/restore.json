@@ -1,0 +1,18 @@
+{
+  "result": "passed",
+  "counts": {
+    "empaques": {
+      "packing_part": 302,
+      "packing_capture": 0,
+      "packing_demand": 0,
+      "django_migrations": 20
+    },
+    "empaques_restore_check": {
+      "packing_part": 302,
+      "packing_capture": 0,
+      "packing_demand": 0,
+      "django_migrations": 20
+    }
+  },
+  "overwrote_operational_db": false
+}

@@ -1,0 +1,31 @@
+/* Connect every packing view to the same six palettes as Macros. */
+@media screen {
+  :root[data-palette] {
+    --bg: var(--mesa-bg);
+    --surface: var(--mesa-surface);
+    --raised: var(--mesa-surface-soft);
+    --text: var(--mesa-text);
+    --muted: var(--mesa-muted);
+    --line: var(--mesa-line);
+    --blue: var(--mesa-blue);
+    --action: var(--mesa-action);
+    --soft: var(--mesa-accent-soft);
+    --hero: var(--mesa-hero);
+    --green: var(--mesa-blue);
+    --green-dark: var(--mesa-text);
+    --white: var(--mesa-surface);
+    background: var(--mesa-bg);
+  }
+  html[data-palette] .suite-header { background: var(--mesa-header); }
+  html[data-palette] .app .page-heading { background: var(--mesa-hero); }
+  html[data-palette]:not([data-palette="classic"]) :is(.app .page-heading,.login-art) { color: var(--text); }
+  html[data-palette]:not([data-palette="classic"]) :is(.app .page-heading p,.app .page-heading .eyebrow,.login-art p,.login-art small,.login-art .eyebrow,.login-logo) { color: var(--muted); }
+  html[data-palette]:not([data-palette="classic"]) .page-heading .secondary { background: var(--soft); color: var(--blue); border-color: var(--line); }
+  html[data-palette] :is(.primary,.sheet-capture):hover { background: color-mix(in srgb,var(--action) 85%,#000); }
+  html[data-palette] .login-appearance { position: absolute; top: 18px; right: 18px; z-index: 25; }
+  html[data-palette] .login-form { position: relative; }
+  html[data-palette] .mesa-palette-panel select { min-height: 44px; padding: 10px 12px; }
+}
+@media print {
+  .mesa-appearance { display: none !important; }
+}
