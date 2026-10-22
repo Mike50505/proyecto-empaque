@@ -2,6 +2,7 @@ name: empaques-mesa
 services:
   db:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-empaques}
       POSTGRES_USER: ${POSTGRES_USER:-empaques}
@@ -15,6 +16,7 @@ services:
       retries: 20
   backend:
     build: {context: ., dockerfile: backend/Dockerfile}
+    restart: unless-stopped
     env_file: .env
     environment:
       POSTGRES_HOST: db
@@ -25,6 +27,7 @@ services:
     ports: ["127.0.0.1:58000:8000"]
   frontend:
     build: {context: ./frontend}
+    restart: unless-stopped
     depends_on: [backend]
     ports: ["127.0.0.1:58080:80"]
     volumes: ["staticfiles:/var/www/static:ro"]

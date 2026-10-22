@@ -1,6 +1,6 @@
 import tempfile
 import uuid
-from datetime import date
+from datetime import date,datetime,time as dt_time,timedelta
 from io import BytesIO
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
@@ -77,7 +77,8 @@ class ProgramDeletionTests(TestCase):
         self.program.published=True;self.program.save()
         Shift.objects.create(code='A');Employee.objects.create(payroll='DELETE-P',name='Synthetic')
         reviewed=self.review().data
-        event=services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':timezone.now().isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':''})
+        effective=timezone.make_aware(datetime.combine(timezone.localdate()-timedelta(days=1),dt_time(10)),timezone.get_current_timezone())
+        event=services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':''})
         self.assertEqual(self.delete(review=reviewed).status_code,400)
         event.voided=True;event.save()
         self.assertFalse(self.review().data['can_delete'])

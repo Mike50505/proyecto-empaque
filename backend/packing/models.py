@@ -63,6 +63,8 @@ class Demand(models.Model):
     quantity = models.PositiveIntegerField()
     priority = models.PositiveIntegerField(default=2)
     due_on = models.DateField(null=True, blank=True)
+    carry_to = models.DateField(null=True, blank=True)
+    archived = models.BooleanField(default=False)
     attributes_snapshot = models.JSONField(default=dict)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['program', 'reference'], name='unique_program_line')]
@@ -75,8 +77,10 @@ class Capture(models.Model):
     effective_at = models.DateTimeField()
     operational_date = models.DateField()
     shift = models.ForeignKey(Shift, on_delete=models.PROTECT)
-    packer = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='packed')
+    packer = models.ForeignKey(Employee, on_delete=models.PROTECT, null=True, blank=True, related_name='packed')
+    packer_payroll = models.CharField(max_length=40, blank=True)
     inspector = models.ForeignKey(Employee, on_delete=models.PROTECT, null=True, blank=True, related_name='inspected')
+    inspector_payroll = models.CharField(max_length=40, blank=True)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     released = models.BooleanField(default=False)
@@ -120,6 +124,15 @@ class Audit(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     reason = models.TextField(blank=True)
     data = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class WeekTransfer(models.Model):
+    key = models.UUIDField(unique=True)
+    demand = models.ForeignKey(Demand, on_delete=models.PROTECT, related_name='week_transfers')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    from_start = models.DateField()
+    to_start = models.DateField()
+    result = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
 class ImportBatch(models.Model):

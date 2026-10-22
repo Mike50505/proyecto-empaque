@@ -55,6 +55,17 @@ def sync(full=False):
             with transaction.atomic():
                 lock_ledger()
                 for event in result['results']:
+                    if event.get('excluded'):
+                        # Universo uses a minimal marker when a credential can no
+                        # longer see a sample. Preserve historical foreign keys,
+                        # but retire it from the usable local catalog.
+                        part=Part.objects.filter(universe_id=str(event['part_id'])).first()
+                        if part:
+                            part.provisional=True
+                            part.attributes={**(part.attributes or {}),'active':False,'is_sample':True,'excluded':True}
+                            part.synced_at=timezone.now()
+                            part.save(update_fields=['provisional','attributes','synced_at'])
+                        continue
                     item={**event['part'],'id':event['part_id']}
                     # Change images contain FK IDs, while /parts/ contains names.
                     # Resolve the names rather than retaining a stale customer.

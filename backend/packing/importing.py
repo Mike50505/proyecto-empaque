@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from .models import *
 from .services import require, lock_ledger, audit, revise, applied, allocate, check_open
-from .part_validation import resolve_part, validate_part_customer, validate_program
+from .part_validation import resolve_part, resolve_part_by_number, validate_part_customer, validate_program
 from .client_groups import client_group
 
 MODES=['new','revision','opening','reconcile','history']
@@ -54,7 +54,7 @@ def inspect(content, mapping, mode):
         # Solo las plantillas explícitas de demanda nueva pueden seleccionarse solas.
         # Un balance histórico de una sola hoja sigue exigiendo selección oficial.
         candidates=[]
-        required={'CLIENTE','SEMANA_PROGRAMA','NUMERO_PARTE','CANTIDAD_PROGRAMADA'}
+        required={'SEMANA_PROGRAMA','NUMERO_PARTE','CANTIDAD_PROGRAMADA'}
         if mode in ['new','revision']:
             for candidate in wf:
                 for row in candidate.iter_rows(max_row=min(30,candidate.max_row)):
@@ -98,21 +98,30 @@ def inspect(content, mapping, mode):
         if title_weeks and week_candidates and int(title_weeks[0])!=int(week_candidates[0][1]):
             issue('Semana del encabezado distinta del nombre: requiere resolución explícita.',week_candidates[0][0],'warning' if mapping.get('resolve_week') else 'blocking')
         if ('(' in sheet or 'OK' in norm(sheet) or len(title_weeks)>1) and not mapping.get('resolve_version'): issue('Hoja con variante o semanas múltiples: selecciona versión oficial explícitamente.')
-    seen=set()
+    seen=set(); seen_parts={}
     for r in range(header+1,sf.max_row+1):
         raw=sv.cell(r,part_col).value
         client=sv.cell(r,client_col).value if client_col else mapping.get('client')
-        if not operational_identity(raw,client):
+        number=str(raw or '').strip()
+        if isinstance(raw,(int,float)) and sf.cell(r,part_col).number_format.startswith('000'):
+            number=f'{int(raw):0{len(sf.cell(r,part_col).number_format)}d}'
+        selected=None
+        catalog_identity=template and not str(client or '').strip()
+        if catalog_identity and operational_identity(raw,'CATALOGO'):
+            try:
+                selected=resolve_part_by_number(number,mapping.get('part_resolutions',{}).get(str(r)))
+                client=selected.customer
+            except ValidationError as exc:
+                issue(' '.join(str(item) for item in exc.detail),str(r))
+                continue
+        if not operational_identity(raw,'CATALOGO' if catalog_identity else client):
             if isinstance(client,str) and norm(client).startswith(('PROGRAMADO','PENDIENTE')) and client_col:
                 control=sv.cell(r,client_col+1)
                 if isinstance(control.value,(int,float)):
                     result['controls'].append({'label':client,'cell':control.coordinate,'value':control.value})
             result['omitted'].append({'row':r,'reason':'Sin identidad operativa válida: blanco, encabezado, resumen, calendario o nota auxiliar.','part_value':scalar(raw),'client_value':scalar(client)}); continue
         client=client_group(client)
-        number=str(raw).strip()
         if sf.cell(r,part_col).data_type=='f': issue('La identidad de pieza no puede depender de una fórmula.',sf.cell(r,part_col).coordinate)
-        if isinstance(raw,(int,float)) and sf.cell(r,part_col).number_format.startswith('000'):
-            number=f'{int(raw):0{len(sf.cell(r,part_col).number_format)}d}'
         scope=str(sv.cell(r,scope_col).value or '') if scope_col else str(mapping.get('scope',''))
         year=sv.cell(r,columns['ANIO_PROGRAMA']).value if template and 'ANIO_PROGRAMA' in columns else mapping.get('year')
         week=sv.cell(r,columns['SEMANA_PROGRAMA']).value if template and 'SEMANA_PROGRAMA' in columns else mapping.get('week')
@@ -133,8 +142,12 @@ def inspect(content, mapping, mode):
         if identity in seen: issue('Renglón duplicado: proporciona referencia de pedido/renglón distinta.',sf.cell(r,part_col).coordinate)
         seen.add(identity)
         if not group or not year or not week: issue('Falta grupo, año o semana explícitos.',str(r))
-        try: date.fromisocalendar(int(year),int(week),1)
-        except (ValueError,TypeError): issue('Año/semana no válidos.',str(r))
+        parsed_year=parsed_week=0
+        try:
+            parsed_year,parsed_week=int(year),int(week)
+            if isinstance(week,bool) or float(week)!=parsed_week: raise ValueError
+            date.fromisocalendar(parsed_year,parsed_week,1)
+        except (ValueError,TypeError,OverflowError): issue('Año/semana no válidos.',str(r))
         evidence=[]; quantity=0; signed_balance=None
         relevant=set(quantity_cols+[part_col]+([balance_col] if balance_col else []))
         for c in sf[r]:
@@ -146,6 +159,7 @@ def inspect(content, mapping, mode):
         for column in quantity_cols:
             v=sv.cell(r,column).value
             if v is None and sf.cell(r,column).data_type=='f': issue('Fórmula sin resultado almacenado en cantidad.',sf.cell(r,column).coordinate)
+            elif v is None and template: issue('La cantidad programada es obligatoria.',sf.cell(r,column).coordinate)
             if v is not None:
                 if isinstance(v,bool) or not isinstance(v,(int,float)) or int(v)!=v or v<0: issue('Cantidad inválida; no se sustituye por cero.',sv.cell(r,column).coordinate)
                 else: quantity+=int(v)
@@ -153,19 +167,37 @@ def inspect(content, mapping, mode):
             v=sv.cell(r,balance_col).value
             if isinstance(v,(int,float)) and not isinstance(v,bool) and int(v)==v: signed_balance=int(v)
             elif mode in ['opening','reconcile']: issue('Saldo de origen no es un entero almacenado.',sv.cell(r,balance_col).coordinate)
-        selected=None
         resolutions=mapping.get('part_resolutions',{})
         try:
-            selected=resolve_part(number,client,resolutions.get(str(r)))
+            selected=selected or resolve_part(number,client,resolutions.get(str(r)))
         except ValidationError as exc:
             if mode!='history': issue(' '.join(str(item) for item in exc.detail),str(r))
         if selected and mode=='new':
             client=client_group(selected.customer)
             number=selected.number
             group=client_group_name(client)
+        if selected and template and not scope.strip():
+            scope=selected.scope
         if mode=='opening' and signed_balance is not None and signed_balance>quantity: issue('Pendiente mayor que demanda mapeada; revisa arrastres/alcance.',str(r))
-        record={'row':r,'group':str(group or ''),'client':str(client),'scope':scope,'year':int(year or 0),'week':int(week or 0),'part':number,'part_id':selected.pk if selected else None,'reference':reference,'quantity':quantity,'signed_balance':signed_balance,'evidence':evidence}
+        record={'row':r,'group':str(group or ''),'client':str(client),'scope':scope,'year':parsed_year,'week':parsed_week,'part':number,'part_id':selected.pk if selected else None,'reference':reference,'quantity':quantity,'signed_balance':signed_balance,'evidence':evidence}
         p=Program.objects.filter(pk=mapping['program_id']).first() if mapping.get('program_id') else Program.objects.filter(reference=program_ref(record)).first()
+        if mode=='new' and selected:
+            part_key=(str(group),str(client),scope,parsed_year,parsed_week,selected.pk)
+            if part_key in seen_parts:
+                record['duplicate_in_file']=True
+                record['duplicate_source_row']=seen_parts[part_key]
+            else: seen_parts[part_key]=r
+            matches=list(Demand.objects.filter(program=p,part=selected).order_by('id')) if p else []
+            if len(matches)>1:
+                issue('Ya existen varias órdenes de este número en el programa semanal; consolídalas antes de importar.',str(r))
+            elif matches:
+                found=matches[0]
+                record.update(duplicate_existing=True,existing_demand=found.pk,current_quantity=found.quantity,quantity_after=found.quantity+quantity if mapping.get('duplicate_action','sum')=='sum' else quantity)
+            if record.get('duplicate_in_file') or record.get('duplicate_existing'):
+                action=mapping.get('duplicate_action','sum')
+                if action not in ['sum','replace']:
+                    issue('Elige si deseas sumar o sustituir la cantidad del número que ya existe.',str(r))
+                else: record['duplicate_action']=action
         resolved=mapping.get('line_resolutions',{}).get(str(r))
         existing=(Demand.objects.filter(program=p,pk=resolved).first() if resolved else Demand.objects.filter(program=p,reference=reference).first()) if p else None
         if existing:
@@ -251,7 +283,12 @@ def commit(actor, pk, publish=False):
         validate_part_customer(part,row['client'])
         resolved=batch.mapping.get('line_resolutions',{}).get(str(row['row']))
         line=Demand.objects.filter(program=program,pk=resolved).first() if resolved else Demand.objects.filter(program=program,reference=row['reference']).first()
-        if batch.mode=='new' and line: raise ValidationError('Demanda existente: usa revisión, no programa nuevo.')
+        if batch.mode=='new' and not line:
+            matching=list(Demand.objects.select_for_update().filter(program=program,part=part).order_by('id'))
+            if len(matching)>1: raise ValidationError('El programa tiene varias Ã³rdenes con este nÃºmero. ConsolÃ­dalas antes de importar.')
+            line=matching[0] if matching else None
+        existing_line=line is not None
+        if batch.mode=='new' and line and line.part_id!=part.id: raise ValidationError('El número de parte existente no coincide con el archivo.')
         if batch.mode in ['revision','reconcile'] and not line: raise ValidationError('Renglón no encontrado en programa; revisa identidad y referencia.')
         if not line:
             line=Demand.objects.create(program=program,part=part,reference=row['reference'],original=row['quantity'],quantity=row['quantity'],attributes_snapshot={'number':part.number,'diameter':part.diameter,'attributes':part.attributes,'source':row['evidence']})
@@ -260,7 +297,15 @@ def commit(actor, pk, publish=False):
                 line.save(update_fields=['reference'])
                 row['reference']=line.reference
         if line.part_id!=part.id: raise ValidationError('La pieza no coincide con la identidad del renglón existente.')
-        if batch.mode=='revision': revise(actor,line.pk,row['quantity'],reason)
+        if batch.mode=='new' and not resolved and existing_line:
+            action=batch.mapping.get('duplicate_action','sum')
+            if action not in ['sum','replace']: raise ValidationError('Elige si deseas sumar o sustituir la cantidad repetida y vuelve a revisar el Excel.')
+            target=line.quantity+row['quantity'] if action=='sum' else row['quantity']
+            revise(actor,line.pk,target,reason)
+            line.original=line.original+row['quantity'] if action=='sum' else row['quantity']
+            line.save(update_fields=['original'])
+            row['reference']=line.reference
+        elif batch.mode=='revision': revise(actor,line.pk,row['quantity'],reason)
         elif batch.mode=='opening':
             if Capture.objects.filter(target=line).exists() or line.allocations.exists() or OpeningBalance.objects.filter(demand=line).exists(): raise ValidationError('El saldo inicial exige un renglón sin operación ni saldo previo.')
             from .services import parse_time
@@ -307,6 +352,8 @@ def publish_batch(actor,batch):
         if not program.published:
             program.published=True;program.save(update_fields=['published'])
             audit(actor,'publication',program,'Publicación desde importación revisada',batch=batch.pk,published=True)
+    from .week_carry import apply_waiting_credits
+    apply_waiting_credits(actor,programs)
 
 def result(batch):
     programs=list(batch_programs(batch).values('id','client','scope','year','week','published','group_id','group__name'))

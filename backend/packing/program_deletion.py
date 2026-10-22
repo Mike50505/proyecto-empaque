@@ -5,12 +5,12 @@ from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
-from .models import Program, Capture, OpeningBalance, Allocation, Revision, ClosedPeriod
+from .models import Program, Capture, OpeningBalance, Allocation, Revision, ClosedPeriod, WeekTransfer
 from .services import require, lock_ledger, audit, check_open
 
 
 def review(program):
-    orders=list(program.lines.order_by('id').values('id','reference','part__number','quantity'))
+    orders=list(program.lines.filter(archived=False).order_by('id').values('id','reference','part__number','quantity'))
     info={'id':program.pk,'client':program.client,'scope':program.scope,'year':program.year,'week':program.week,'reference':program.reference,'published':program.published,'version':program.version}
     reasons=[]
     if Capture.objects.filter(target__program=program).exists():
@@ -21,6 +21,8 @@ def review(program):
         reasons.append('El programa tiene asignaciones de producción o excedentes.')
     if Revision.objects.filter(demand__program=program).exists():
         reasons.append('El programa tiene revisiones de demanda registradas.')
+    if WeekTransfer.objects.filter(demand__program=program).exists() or program.lines.filter(carry_to__isnull=False).exists():
+        reasons.append('El programa tiene traslados semanales registrados. Conserva su historial.')
     if ClosedPeriod.objects.filter(date=timezone.localdate()).exists():
         reasons.append('La fecha operativa actual está cerrada.')
     signature=hashlib.sha256(json.dumps({'program':info,'orders':orders},sort_keys=True,ensure_ascii=False).encode()).hexdigest()

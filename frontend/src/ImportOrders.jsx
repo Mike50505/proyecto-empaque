@@ -6,13 +6,14 @@ export default function ImportOrders({mutate,onOpenCapture}){
  const [batch,setBatch]=useState(null),[history,setHistory]=useState([]),[mode,setMode]=useState('new'),[file,setFile]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [mapping,setMapping]=useState({reason:'Carga de órdenes de empaque',sheet:''});
  const [advanced,setAdvanced]=useState('');
+ const [duplicateAction,setDuplicateAction]=useState('sum');
  const refresh=async()=>setHistory(await api('imports/'));
  useEffect(()=>{refresh().catch(e=>setError(e.message))},[]);
  const blocked=batch?.preview.issues.some(i=>i.severity==='blocking');
  const canPublish=batch&&['new','opening'].includes(batch.mode||mode)&&!batch.missing_programs?.length;
  const update=(key,value)=>{setMapping(m=>({...m,[key]:value}));setBatch(null)};
  async function analyze(e){e.preventDefault();setError('');setBusy(true);try{
-   const data=new FormData();data.set('file',file);data.set('mode',mode);data.set('mapping',JSON.stringify({...mapping,...(advanced?JSON.parse(advanced):{})}));
+   const data=new FormData();data.set('file',file);data.set('mode',mode);data.set('mapping',JSON.stringify({...mapping,duplicate_action:duplicateAction,...(advanced?JSON.parse(advanced):{})}));
    const result=await api('imports/',{method:'POST',body:data});setBatch(result);setMapping(m=>({...m,sheet:result.preview.mapping?.sheet||''}));await refresh();
  }catch(e){setError(e.message)}finally{setBusy(false)}}
  async function confirm(publish){setError('');setBusy(true);try{
@@ -25,7 +26,8 @@ export default function ImportOrders({mutate,onOpenCapture}){
  <form className="padded" onSubmit={analyze}>
  <div className="form-grid"><label className="field"><span>Archivo Excel</span><input type="file" accept=".xlsx" required onChange={e=>{setFile(e.target.files[0]||null);setBatch(null);setMapping(m=>({...m,sheet:''}))}}/></label>
  <label className="field"><span>Tipo de carga</span><select value={mode} onChange={e=>{setMode(e.target.value);setBatch(null)}}>{Object.entries(modes).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>
- <p>{mode==='revision'?'Para revisar cantidades conserva el folio que el sistema ya asignó a cada orden.':'Completa cliente, destino, semana, pieza y cantidad. El año actual y el folio de cada orden se asignan automáticamente.'} Cada pieza debe pertenecer al cliente indicado en Universo Ramos. Revisar el Excel todavía no guarda órdenes.</p>
+ <p>{mode==='new'?'Completa solo número de parte, cantidad y semana. Cliente y destino se obtienen del catálogo sincronizado de Universo Ramos; el año actual y el folio de cada orden se asignan automáticamente.':mode==='revision'?'Para revisar cantidades conserva el folio que el sistema ya asignó a cada orden.':'Completa los datos de la plantilla y revisa los ajustes del balance.'} Cada pieza debe existir en el catálogo validado de Universo Ramos. Revisar el Excel todavía no guarda órdenes.</p>
+ {mode==='new'&&<label className="field"><span>Si el número ya existe en esa semana</span><select value={duplicateAction} onChange={e=>{setDuplicateAction(e.target.value);setBatch(null)}}><option value="sum">Sumar la cantidad nueva a la existente</option><option value="replace">Sustituir la cantidad existente por la del Excel</option></select><small>Se conserva una sola orden para el mismo número, cliente, destino y semana. El cambio queda en auditoría.</small></label>}
  <details className="import-options"><summary>Ajustes para balances anteriores o archivos con varias hojas</summary><div className="form-grid">
  <label className="field"><span>Hoja del archivo</span>{batch?.preview.sheets?.length?<select value={mapping.sheet} onChange={e=>update('sheet',e.target.value)}><option value="">Detectar plantilla automáticamente</option>{batch.preview.sheets.map(s=><option key={s}>{s}</option>)}</select>:<input value={mapping.sheet} placeholder="Detección automática para plantilla" onChange={e=>update('sheet',e.target.value)}/>}</label>
  {['week','balance_column','cutoff'].map((key,i)=><label className="field" key={key}><span>{['Semana','Columna de saldo','Fecha/hora de corte con zona'][i]}</span><input value={mapping[key]||''} onChange={e=>update(key,e.target.value)}/></label>)}
@@ -38,6 +40,7 @@ export default function ImportOrders({mutate,onOpenCapture}){
  {batch&&<section className="panel import-review"><div className="panel-head"><div><h2>{batch.missing_programs?.length?'Carga con programas eliminados':batch.applied?canPublish?batch.visible_in_capture?'Órdenes publicadas':'Guardado como borrador':'Carga confirmada':'Revisión antes de guardar'}</h2><p>Hoja {batch.preview.mapping?.sheet||'sin seleccionar'} · {batch.preview.rows.length} órdenes · {n(batch.preview.totals?.quantity)} piezas</p></div></div>
  <div className="padded">{batch.missing_programs?.length>0&&<div className="notice warning">Se eliminaron programas de esta carga. El archivo se conserva como evidencia y no vuelve a crear las órdenes eliminadas. Para una nueva carga, revisa y vuelve a importar el archivo con una nueva descripción.</div>}{batch.preview.issues.map((issue,i)=><div className={'notice '+(issue.severity==='blocking'?'error':'warning')} key={i} role={issue.severity==='blocking'?'alert':'status'}>{issue.sheet} {issue.cell}: {issue.message}</div>)}
  {batch.applied&&!batch.visible_in_capture&&canPublish&&<div className="notice warning">Las órdenes están guardadas, pero aún no aparecen al operador. Pulsa «Publicar órdenes».</div>}
+ {batch.mode==='new'&&batch.preview.rows.some(r=>r.duplicate_existing||r.duplicate_in_file)&&<div className="notice warning">Hay números repetidos en el programa o en este Excel. Al confirmar se {duplicateAction==='sum'?'sumarán las cantidades':'sustituirá la cantidad existente'} y quedará una sola orden por número, cliente, destino y semana.</div>}
  <div className="table-scroll"><table><thead><tr><th>Orden</th><th>Número de parte</th><th>Cliente / destino</th><th>Semana</th><th className="numeric">Cantidad</th></tr></thead><tbody>{batch.preview.rows.map(r=><tr key={r.row}><td>{batch.mode==='new'&&!batch.applied?'Se asigna al importar':r.reference}</td><td>{r.part}</td><td>{r.client}<small className="part-detail">{r.scope}</small></td><td>{r.year} / {r.week}</td><td className="numeric">{n(r.quantity)}</td></tr>)}</tbody></table></div>
  <div className="import-actions">{batch.visible_in_capture?<button className="primary" onClick={()=>onOpenCapture(batch.programs)}>Ver órdenes</button>:<>
  {canPublish&&<button className="primary" disabled={blocked&&!batch.applied||busy||!batch.preview.rows.length} onClick={()=>confirm(true)}>{batch.applied?'Publicar órdenes':'Importar y publicar órdenes'}</button>}

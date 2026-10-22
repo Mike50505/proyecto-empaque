@@ -15,6 +15,61 @@ from .part_validation import resolve_part
 
 
 class PartCustomerValidation(TestCase):
+    def minimal_workbook(self,rows):
+        book=Workbook();sheet=book.active;sheet.title='Programa'
+        sheet.append(['numero_parte','cantidad_programada','semana_programa'])
+        for row in rows: sheet.append(row)
+        stream=BytesIO();book.save(stream)
+        return SimpleUploadedFile('minimal.xlsx',stream.getvalue())
+
+    def test_three_column_orders_complete_customer_destination_and_folios(self):
+        self.part.scope='SLP';self.part.save()
+        other=Part.objects.create(number='RHEEM-1',customer='RHEEM TRANSFERENCIA',scope='FALCON',universe_id=str(uuid.uuid4()),provisional=False,attributes={'active':True})
+        rows=[[self.part.number,100,43],[other.number,200,44],[self.part.number,50,43]]
+        content=self.minimal_workbook(rows).read()
+        batch=importing.preview(self.user,SimpleUploadedFile('minimal.xlsx',content),'new',{'reason':'Three columns'})
+        self.assertTrue(batch.preview['auto_selected_sheet'])
+        self.assertFalse([i for i in batch.preview['issues'] if i['severity']=='blocking'])
+        self.assertEqual([(r['client'],r['scope']) for r in batch.preview['rows']],[('LENNOX 1','SLP'),('RHEEM','FALCON'),('LENNOX 1','SLP')])
+        self.assertEqual(Demand.objects.count(),0)
+        importing.commit(self.user,batch.pk,publish=True)
+        lines=list(Demand.objects.select_related('program').order_by('pk'))
+        self.assertEqual(len(lines),3)
+        self.assertEqual([line.quantity for line in lines],[100,200,50])
+        self.assertTrue(all(line.program.published for line in lines))
+        self.assertEqual(len({line.reference for line in lines}),3)
+        repeated=importing.preview(self.user,SimpleUploadedFile('minimal.xlsx',content),'new',{'reason':'Three columns'})
+        importing.commit(self.user,repeated.pk,publish=True)
+        self.assertEqual(Demand.objects.count(),3)
+
+    def test_three_columns_catalog_failures_are_blocking(self):
+        for status in ('unknown','inactive','provisional','no_customer','ambiguous'):
+            with self.subTest(status=status):
+                self.part.provisional=status=='provisional'
+                self.part.customer='' if status=='no_customer' else 'LENNOX 1'
+                self.part.attributes={'active':status!='inactive'}
+                self.part.save()
+                if status=='ambiguous':
+                    Part.objects.create(number=self.part.number,customer='RHEEM',universe_id=str(uuid.uuid4()),provisional=False,attributes={'active':True})
+                number='UNKNOWN' if status=='unknown' else self.part.number
+                batch=importing.preview(self.user,self.minimal_workbook([[number,100,43]]),'new',{'reason':status})
+                self.assertTrue(any(i['severity']=='blocking' for i in batch.preview['issues']))
+                with self.assertRaises(ValidationError): importing.commit(self.user,batch.pk)
+                self.assertEqual(Demand.objects.count(),0)
+
+    def test_three_columns_validate_quantity_and_week(self):
+        for quantity,week in ((None,43),(-1,43),(1.5,43),(100,None),(100,'invalid'),(100,54),(100,42.5)):
+            with self.subTest(quantity=quantity,week=week):
+                batch=importing.preview(self.user,self.minimal_workbook([[self.part.number,quantity,week]]),'new',{'reason':str((quantity,week))})
+                self.assertTrue(any(i['severity']=='blocking' for i in batch.preview['issues']))
+                with self.assertRaises(ValidationError): importing.commit(self.user,batch.pk)
+
+    def test_three_columns_accept_official_pending_customer(self):
+        self.part.customer='PENDIENTE';self.part.save()
+        batch=importing.preview(self.user,self.minimal_workbook([[self.part.number,100,43]]),'new',{'reason':'Official pending'})
+        self.assertFalse([i for i in batch.preview['issues'] if i['severity']=='blocking'])
+        self.assertEqual(batch.preview['rows'][0]['client'],'PENDIENTE')
+
     def setUp(self):
         media=tempfile.TemporaryDirectory();self.addCleanup(media.cleanup)
         self.enterContext(override_settings(MEDIA_ROOT=media.name))

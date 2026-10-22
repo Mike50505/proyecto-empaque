@@ -4,7 +4,7 @@ from datetime import date
 from io import BytesIO
 from django.contrib.auth import authenticate, login, logout
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.http import HttpResponse
 from django.middleware.csrf import get_token
 from django.utils import timezone
@@ -28,7 +28,7 @@ def guarded(fn):
     @wraps(fn)
     def wrap(*args,**kwargs):
         try: return fn(*args,**kwargs)
-        except ObjectDoesNotExist: raise ValidationError('No se encontró el registro solicitado o la nómina activa.')
+        except ObjectDoesNotExist: raise ValidationError('No se encontró el registro solicitado.')
         except (ValueError,TypeError,KeyError) as e: raise ValidationError('Datos inválidos o incompletos; verifica el formulario.') from e
     return wrap
 
@@ -52,7 +52,8 @@ def catalog(request):
     programs=Program.objects.filter(**({} if roles(request.user)['plan'] else {'published':True}))
     parts=[{**part,'universe_customer':part['customer'],'customer':client_group(part['customer'])} for part in Part.objects.order_by('number').values()]
     program_rows=[{**program,'client':client_group(program['client'])} for program in programs.values()]
-    return Response({'clients':list(CLIENT_GROUPS),'part_clients':list(CLIENT_GROUPS),'current_year':timezone.localdate().year,'groups':list(BalanceGroup.objects.values()),'employees':list(Employee.objects.filter(active=True).values()),'shifts':list(Shift.objects.values()),'parts':parts,'programs':program_rows,'integration':{'last_sync':state.last_sync if state else None,'error':state.error if state else '', 'local_parts':Part.objects.count()},'today':str(timezone.localdate())})
+    work_weeks=[{'year':day.isocalendar().year,'week':day.isocalendar().week} for day in Demand.objects.filter(program__in=programs,carry_to__isnull=False,archived=False).values_list('carry_to',flat=True).distinct()]
+    return Response({'clients':list(CLIENT_GROUPS),'part_clients':list(CLIENT_GROUPS),'current_year':timezone.localdate().year,'groups':list(BalanceGroup.objects.values()),'employees':list(Employee.objects.filter(active=True).values()),'shifts':list(Shift.objects.values()),'parts':parts,'programs':program_rows,'work_weeks':work_weeks,'integration':{'last_sync':state.last_sync if state else None,'error':state.error if state else '', 'local_parts':Part.objects.count()},'today':str(timezone.localdate())})
 
 @api_view(['POST'])
 @guarded
@@ -76,7 +77,7 @@ def employee_create(request):
 def balance(request): return Response(s.balance(request.user,request.query_params))
 
 def event_data(e):
-    return {'id':e.pk,'key':str(e.key),'quantity':e.quantity,'part':e.target.attributes_snapshot.get('number',e.target.part.number),'demand':e.target_id,'client':client_group(e.target.program.client),'scope':e.target.program.scope,'year':e.target.program.year,'week':e.target.program.week,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer.payroll,'inspector':e.inspector.payroll if e.inspector else None,'actor':e.actor.get_username(),'released':e.released,'release_mode':e.release_mode,'voided':e.voided,'credit':s.available(e),'allocations':list(e.allocations.values('demand','quantity','active','created_at')),'notes':e.notes}
+    return {'id':e.pk,'key':str(e.key),'quantity':e.quantity,'part':e.target.attributes_snapshot.get('number',e.target.part.number),'demand':e.target_id,'client':client_group(e.target.program.client),'scope':e.target.program.scope,'year':e.target.program.year,'week':e.target.program.week,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer_payroll or (e.packer.payroll if e.packer else ''),'inspector':e.inspector_payroll or (e.inspector.payroll if e.inspector else None),'actor':e.actor.get_username(),'released':e.released,'release_mode':e.release_mode,'voided':e.voided,'credit':s.available(e),'allocations':list(e.allocations.values('demand','quantity','active','created_at')),'notes':e.notes}
 
 @api_view(['GET','POST'])
 @guarded
@@ -84,12 +85,12 @@ def captures(request):
     if request.method=='POST': return Response(event_data(s.capture(request.user,request.data)),status=201)
     s.require(request.user,'consult')
     qs=Capture.objects.select_related('target__part','target__program','packer','inspector','shift','actor').order_by('-id')
-    allowed=s.demand_queryset(request.user,{})
+    allowed=s.demand_queryset(request.user,{},include_archived=True)
     qs=qs.filter(target__in=allowed)
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
-    if request.query_params.get('packer'): qs=qs.filter(packer__payroll=request.query_params['packer'])
-    if request.query_params.get('inspector'): qs=qs.filter(inspector__payroll=request.query_params['inspector'])
+    if request.query_params.get('packer'): qs=qs.filter(Q(packer_payroll=request.query_params['packer'])|Q(packer__payroll=request.query_params['packer']))
+    if request.query_params.get('inspector'): qs=qs.filter(Q(inspector_payroll=request.query_params['inspector'])|Q(inspector__payroll=request.query_params['inspector']))
     if request.query_params.get('actor'): qs=qs.filter(actor__username=request.query_params['actor'])
     if request.query_params.get('state')=='pending':qs=qs.filter(released=False,voided=False)
     if request.query_params.get('state')=='released':qs=qs.filter(released=True,voided=False)
@@ -179,6 +180,9 @@ def program_action(request,pk):
     if request.data.get('published') and not p.group.active: raise ValidationError('Grupo desactivado.')
     p.published=bool(request.data['published']); p.save(update_fields=['published'])
     s.audit(request.user,'publication',p,published=p.published)
+    if p.published:
+        from .week_carry import apply_waiting_credits
+        apply_waiting_credits(request.user,[p])
     return Response({'id':p.pk,'published':p.published})
 
 
@@ -203,6 +207,21 @@ def revise(request,pk):
     s.audit(request.user,'priority_due',line,request.data['reason'],before=before,after={'priority':line.priority,'due_on':str(line.due_on) if line.due_on else None})
     return Response({'id':line.pk,'quantity':line.quantity})
 
+@api_view(['DELETE'])
+@guarded
+@transaction.atomic
+def demand_detail(request,pk):
+    s.require(request.user,'plan'); s.lock_ledger(); s.check_open(timezone.localdate())
+    line=Demand.objects.select_for_update().select_related('program','part').get(pk=pk)
+    if line.archived: raise ValidationError('Este número ya fue retirado del programa.')
+    reason=request.data.get('reason')
+    if not isinstance(reason,str) or not reason.strip(): raise ValidationError('Indica el motivo de eliminación.')
+    snapshot={'program':line.program.reference,'client':line.program.client,'scope':line.program.scope,'year':line.program.year,'week':line.program.week,'reference':line.reference,'part':line.attributes_snapshot.get('number',line.part.number),'quantity':line.quantity,'original':line.original}
+    s.audit(request.user,'delete_demand',line,reason.strip(),demand=snapshot)
+    line.archived=True
+    line.save(update_fields=['archived'])
+    return Response({'deleted':True,'id':pk,'history_preserved':True})
+
 @api_view(['POST'])
 @guarded
 def transfer(request): return Response({'allocated':s.transfer(request.user,request.data['source'],request.data['demand'],request.data['quantity'],request.data['reason'],request.data.get('opening',False))})
@@ -212,6 +231,13 @@ def transfer(request): return Response({'allocated':s.transfer(request.user,requ
 def apply_surplus(request):
     from .surplus import apply_all
     return Response(apply_all(request.user))
+
+
+@api_view(['POST'])
+@guarded
+def next_week(request,pk):
+    from .week_carry import move
+    return Response(move(request.user,pk,request.data))
 
 @api_view(['GET','POST'])
 @guarded
@@ -284,25 +310,26 @@ def export(request):
         s.require(request.user,'plan'); data=Snapshot.objects.get(pk=request.query_params['snapshot']).payload
     if 'order_state' in request.query_params and not request.query_params.get('snapshot'):
         keys=['client','scope','year','week','reference','part','diameter','quantity','packed','pending_release','applied','packing_pending','pending','credit']
-        headers=['Cliente','Destino','Año','Semana','Folio de orden','Número de parte','Diámetro','Programado','Empacado','Por liberar','Aplicado','Por empacar','Pendiente por cumplir','Excedente']
-        return xlsx_response([headers]+[[r[k] for k in keys] for r in data['rows']],'ordenes-empaque')
+        headers=['Cliente','Destino','Año','Semana de trabajo','Folio de orden','Número de parte','Diámetro','Programado','Empacado','Por liberar','Aplicado','Por empacar','Pendiente por cumplir','Excedente','Trasladado desde']
+        return xlsx_response([headers]+[[r[k] for k in keys]+[', '.join(f"{origin['year']}/S{origin['week']}" for origin in r.get('origins',[]))] for r in data['rows']],'ordenes-empaque')
     keys=['group','client','scope','year','week','reference','part','diameter','original','quantity','applied','pending','credit','A','B']
-    return xlsx_response([['Grupo','Cliente','Ámbito','Año','Semana origen','Renglón','Número de parte','Diámetro','Original','Vigente','Aplicado','Pendiente','Excedente','A del día','B del día']]+[[r[k] for k in keys] for r in data['rows']],'balance-empaques')
+    return xlsx_response([['Grupo','Cliente','Ámbito','Año','Semana de trabajo','Renglón','Número de parte','Diámetro','Original','Vigente','Aplicado','Pendiente','Excedente','A del día','B del día','Trasladado desde']]+[[r[k] for k in keys]+[', '.join(f"{origin['year']}/S{origin['week']}" for origin in r.get('origins',[]))] for r in data['rows']],'balance-empaques')
 
 @api_view(['GET'])
 @never_cache
 def template(request):
     s.require(request.user,'plan')
     columns=['cliente','destino_o_ambito','semana_programa','numero_parte','cantidad_programada']
+    if request.query_params.get('mode','new')=='new': columns=['numero_parte','cantidad_programada','semana_programa']
     if request.query_params.get('mode')=='revision': columns.append('referencia')
-    filename='plantilla-revision-ordenes' if request.query_params.get('mode')=='revision' else 'plantilla-ordenes-por-cliente'
+    filename='plantilla-revision-ordenes' if request.query_params.get('mode')=='revision' else 'plantilla-ordenes'
     return xlsx_response([columns],filename)
 
 @api_view(['GET'])
 @guarded
 def production_export(request):
     s.require(request.user,'consult')
-    qs=Capture.objects.filter(target__in=s.demand_queryset(request.user,request.query_params)).select_related('target__part','packer','inspector','actor','shift')
+    qs=Capture.objects.filter(target__in=s.demand_queryset(request.user,request.query_params,include_archived=True)).select_related('target__part','packer','inspector','actor','shift')
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
-    return xlsx_response([['Folio','Pieza','Cantidad','Fecha efectiva','Registro','Fecha operativa','Turno','Empacador','Inspector','Capturista','Liberada','Anulada']]+[[e.pk,e.target.part.number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer.payroll,e.inspector.payroll if e.inspector else '',e.actor.username,e.released,e.voided] for e in qs],'movimientos-empaque')
+    return xlsx_response([['Folio','Pieza','Cantidad','Fecha efectiva','Registro','Fecha operativa','Turno','Empacador','Inspector','Capturista','Liberada','Anulada']]+[[e.pk,e.target.part.number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer_payroll or (e.packer.payroll if e.packer else ''),e.inspector_payroll or (e.inspector.payroll if e.inspector else ''),e.actor.username,e.released,e.voided] for e in qs],'movimientos-empaque')

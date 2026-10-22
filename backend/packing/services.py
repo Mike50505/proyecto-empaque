@@ -1,7 +1,7 @@
 import hashlib
 import json
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
@@ -79,25 +79,34 @@ def capture(actor, payload):
         if existing.fingerprint != fingerprint or existing.actor_id != actor.id: raise ValidationError('Conflicto: el identificador ya se utilizó con otro contenido.')
         return existing
     line = Demand.objects.select_for_update().select_related('program').get(pk=payload['demand'])
+    if line.archived: raise ValidationError('Este número ya fue retirado del programa.')
     if not line.program.published: raise ValidationError('El programa todavía no está publicado.')
     validate_part_customer(line.part,line.program.client)
     qty = positive(payload['quantity'])
-    if qty > packing_pending(line) and not payload.get('accept_excess'):
+    from .week_carry import members, group_packing_pending, allocate_work
+    if qty > group_packing_pending(members(line)) and not payload.get('accept_excess'):
         raise ValidationError('La cantidad genera excedente; revisa y confirma el excedente previsto.')
     effective = parse_time(payload['effective_at'])
-    day = date.fromisoformat(payload['operational_date'])
+    local_effective=timezone.localtime(effective)
+    local_time=local_effective.time()
+    minute=local_time.hour*60+local_time.minute
+    if 4*60+38<=minute<16*60+37: shift_code='A'
+    else: shift_code='B'
+    day=date.fromisoformat(payload['operational_date'])
+    if shift_code=='B' and minute<=4*60+37: day=local_effective.date()-timedelta(days=1)
     check_open(day)
     opening=OpeningBalance.objects.filter(demand=line).order_by('-cutoff').first()
     if opening and effective<=opening.cutoff:
         raise ValidationError('La captura es anterior al corte inicial y puede estar incluida en el saldo legado; requiere conciliación autorizada.')
     if effective > timezone.now(): raise ValidationError('La fecha de trabajo no puede estar en el futuro.')
     if abs((timezone.localtime(effective).date()-day).days)>1: raise ValidationError('La fecha operativa debe corresponder a la jornada efectiva.')
-    packer = Employee.objects.get(payroll=payload['packer'], active=True)
-    inspector = Employee.objects.get(payroll=payload['inspector'], active=True, inspector=True) if payload.get('inspector') else None
-    released = settings.RELEASE_MODE == 'declared' and bool(inspector)
-    event = Capture.objects.create(key=key, fingerprint=fingerprint, target=line, quantity=qty, effective_at=effective, operational_date=day, shift=Shift.objects.get(code=payload['shift']), packer=packer, inspector=inspector, actor=actor, released=released, release_mode=settings.RELEASE_MODE, notes=payload.get('notes',''))
-    if released: allocate(event, line)
-    audit(actor,'capture',event,quantity=qty,declared_inspector=inspector.payroll if inspector else None)
+    payroll=str(payload.get('packer','')).strip()
+    if not payroll: raise ValidationError('La nómina del empacador es obligatoria.')
+    inspector = None
+    released = False
+    event = Capture.objects.create(key=key, fingerprint=fingerprint, target=line, quantity=qty, effective_at=effective, operational_date=day, shift=Shift.objects.get(code=shift_code), packer_payroll=payroll, inspector=inspector, actor=actor, released=released, release_mode=settings.RELEASE_MODE, notes=payload.get('notes',''))
+    if released: allocate_work(event)
+    audit(actor,'capture',event,quantity=qty)
     return event
 
 @transaction.atomic
@@ -106,10 +115,14 @@ def release(actor, pk, inspector_payroll):
     event = Capture.objects.select_for_update().get(pk=pk)
     check_open(event.operational_date)
     if event.voided: raise ValidationError('Captura anulada.')
+    payroll=str(inspector_payroll or '').strip()
+    if not payroll: raise ValidationError('La nómina del inspector es obligatoria.')
     if not event.released:
-        event.inspector = Employee.objects.get(payroll=inspector_payroll, inspector=True, active=True)
+        event.inspector = None; event.inspector_payroll = payroll
         event.released = True; event.released_by = actor; event.save()
-        allocate(event,event.target)
+        if not event.target.archived:
+            from .week_carry import allocate_work
+            allocate_work(event)
         audit(actor,'release',event)
     return event
 
@@ -161,7 +174,7 @@ def correct(actor, pk, quantity, reason, replacement_key):
     event.voided=True; event.save(update_fields=['voided'])
     replacement=None
     if quantity:
-        replacement=Capture.objects.create(key=replacement_key,fingerprint=hashlib.sha256(str(replacement_key).encode()).hexdigest(),target=event.target,quantity=quantity,effective_at=event.effective_at,operational_date=event.operational_date,shift=event.shift,packer=event.packer,inspector=event.inspector,actor=actor,released=event.released,release_mode=event.release_mode,released_by=event.released_by,notes=reason)
+        replacement=Capture.objects.create(key=replacement_key,fingerprint=hashlib.sha256(str(replacement_key).encode()).hexdigest(),target=event.target,quantity=quantity,effective_at=event.effective_at,operational_date=event.operational_date,shift=event.shift,packer=event.packer,packer_payroll=event.packer_payroll,inspector=event.inspector,inspector_payroll=event.inspector_payroll,actor=actor,released=event.released,release_mode=event.release_mode,released_by=event.released_by,notes=reason)
         if replacement.released:
             for allocation in old_allocations:
                 n=min(available(replacement),allocation.quantity,max(allocation.demand.quantity-applied(allocation.demand),0))
@@ -171,9 +184,10 @@ def correct(actor, pk, quantity, reason, replacement_key):
     CorrectionRequest.objects.filter(capture=event,resolved=False).update(resolved=True)
     return replacement
 
-def demand_queryset(user, params):
+def demand_queryset(user, params, working=False, include_archived=False):
     require(user,'consult')
     qs=Demand.objects.select_related('program__group','part').order_by('priority','program__year','program__week','id')
+    if not include_archived: qs=qs.filter(archived=False)
     if not (user.is_superuser or user.has_perm('packing.plan')): qs=qs.filter(program__published=True)
     if params.get('publication')=='published': qs=qs.filter(program__published=True)
     if params.get('publication')=='draft': qs=qs.filter(program__published=False)
@@ -182,8 +196,8 @@ def demand_queryset(user, params):
     if params.get('client'): qs=qs.filter(client_filter('program__client',params['client']))
     if params.get('subclient'): qs=qs.filter(part__customer__iexact=params['subclient'])
     if params.get('scope'): qs=qs.filter(program__scope=params['scope'])
-    if params.get('year'): qs=qs.filter(program__year=params['year'])
-    if params.get('week'):
+    if params.get('year') and not working: qs=qs.filter(program__year=params['year'])
+    if params.get('week') and not working:
         if params.get('view')=='operational' and params.get('year'):
             qs=qs.filter(program__starts_on__lte=date.fromisocalendar(int(params['year']),int(params['week']),1))
         else: qs=qs.filter(program__week=params['week'])
@@ -194,7 +208,7 @@ def demand_queryset(user, params):
 def balance(user, params):
     lock_ledger()
     day=date.fromisoformat(params.get('date') or str(timezone.localdate()))
-    lines=list(demand_queryset(user,params))
+    lines=list(demand_queryset(user,params,working=True))
     ids=[line.pk for line in lines]
     applied_map={a['demand']:a['n'] for a in Allocation.objects.filter(demand_id__in=ids,active=True).values('demand').annotate(n=Sum('quantity'))}
     packed_map={a['target']:a['n'] for a in Capture.objects.filter(target_id__in=ids,voided=False).values('target').annotate(n=Sum('quantity'))}
@@ -225,11 +239,14 @@ def balance(user, params):
         # duplicar créditos reasignados ni cantidades de saldos iniciales.
         unassigned_physical=row['packed']-allocated_from_captures.get(row['id'],0)
         row['packing_pending']=max(row['quantity']-row['applied']-unassigned_physical,0)
+    from .week_carry import project
+    rows=project(rows,lines,params)
     state=params.get('order_state','all')
     predicates={'pending':lambda r:r['pending']>0,'packing':lambda r:r['packing_pending']>0,'release':lambda r:r['pending_release']>0,'complete':lambda r:r['pending']==0,'credit':lambda r:r['credit']>0}
     if state in predicates: rows=[r for r in rows if predicates[state](r)]
-    quantity=sum(r['quantity'] for r in rows); done=sum(r['applied'] for r in rows)
-    return {'rows':rows,'totals':{'quantity':quantity,'applied':done,'packed':sum(r['packed'] for r in rows),'pending_release':sum(r['pending_release'] for r in rows),'packing_pending':sum(r['packing_pending'] for r in rows),'pending':sum(r['pending'] for r in rows),'credit':sum(r['credit'] for r in rows),'progress':round(100*done/quantity,2) if quantity else None},'date':str(day),'updated_at':timezone.now().isoformat()}
+    totals_rows=[r for r in rows if not r.get('carry_history')]
+    quantity=sum(r['quantity'] for r in totals_rows); done=sum(r['applied'] for r in totals_rows)
+    return {'rows':rows,'totals':{'quantity':quantity,'applied':done,'packed':sum(r['packed'] for r in totals_rows),'pending_release':sum(r['pending_release'] for r in totals_rows),'packing_pending':sum(r['packing_pending'] for r in totals_rows),'pending':sum(r['pending'] for r in totals_rows),'credit':sum(r['credit'] for r in totals_rows),'progress':round(100*done/quantity,2) if quantity else None},'date':str(day),'updated_at':timezone.now().isoformat()}
 
 @transaction.atomic
 def snapshot(actor, params, close=False, reason=''):

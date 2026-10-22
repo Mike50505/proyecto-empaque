@@ -4,7 +4,7 @@ import uuid
 import time
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date,timedelta
+from datetime import date,timedelta,datetime,time as dt_time
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -50,7 +50,9 @@ class BusinessAcceptance(TransactionTestCase):
         return Demand.objects.create(program=p,part=part or self.part,reference='1',original=quantity,quantity=quantity)
 
     def payload(self,quantity,line=None,shift='A',key=None):
-        return {'key':str(key or uuid.uuid4()),'demand':(line or self.line).pk,'quantity':quantity,'effective_at':timezone.now().isoformat(),'operational_date':str(timezone.localdate()),'shift':shift,'packer':'TEST-P','inspector':'TEST-I','accept_excess':True}
+        workday=timezone.localdate()-timedelta(days=1)
+        effective=timezone.make_aware(datetime.combine(workday,dt_time(10 if shift=='A' else 18)),timezone.get_current_timezone())
+        return {'key':str(key or uuid.uuid4()),'demand':(line or self.line).pk,'quantity':quantity,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':shift,'packer':'TEST-P','inspector':'TEST-I','accept_excess':True}
 
     def pack(self,quantity,line=None,shift='A'): return s.capture(self.user,self.payload(quantity,line,shift))
 
@@ -62,6 +64,45 @@ class BusinessAcceptance(TransactionTestCase):
     def test_02_incremental(self):
         self.pack(200);self.pack(50);self.assertEqual(s.applied(self.line),250)
 
+    @override_settings(RELEASE_MODE='declared')
+    def test_capture_accepts_unregistered_packer_and_ignores_old_inspector(self):
+        payload=self.payload(10);payload['packer']='TEMP-UNREGISTERED-55';payload['inspector']='TEST-I'
+        event=s.capture(self.user,payload)
+        self.assertEqual(event.packer_payroll,'TEMP-UNREGISTERED-55')
+        self.assertIsNone(event.packer)
+        self.assertIsNone(event.inspector)
+        self.assertFalse(event.released)
+
+    def test_release_accepts_unregistered_inspector_payroll(self):
+        event=self.pack(10)
+        released=s.release(self.user,event.pk,'QA-TEMP-998')
+        self.assertTrue(released.released)
+        self.assertEqual(released.inspector_payroll,'QA-TEMP-998')
+        self.assertIsNone(released.inspector)
+
+    def test_shift_is_inferred_from_effective_time_not_payload(self):
+        payload=self.payload(10,shift='B');payload['shift']='A'
+        event=s.capture(self.user,payload)
+        self.assertEqual(event.shift.code,'B')
+
+    def test_after_midnight_belongs_to_previous_night_shift_date(self):
+        workday=timezone.localdate()-timedelta(days=1)
+        effective=timezone.make_aware(datetime.combine(workday,dt_time(1,30)),timezone.get_current_timezone())
+        payload=self.payload(10);payload['effective_at']=effective.isoformat()
+        event=s.capture(self.user,payload)
+        self.assertEqual(event.shift.code,'B')
+        self.assertEqual(event.operational_date,workday-timedelta(days=1))
+
+    def test_shift_schedule_boundaries_cover_every_hour(self):
+        workday=timezone.localdate()-timedelta(days=1)
+        cases=[(dt_time(0,0),'B'),(dt_time(2,15),'B'),(dt_time(2,16),'B'),(dt_time(4,37),'B'),(dt_time(4,38),'A'),(dt_time(6,59),'A'),(dt_time(7,0),'A'),(dt_time(16,36),'A'),(dt_time(16,37),'B'),(dt_time(23,59),'B')]
+        for clock,expected in cases:
+            payload=self.payload(1)
+            payload['effective_at']=timezone.make_aware(datetime.combine(workday,clock),timezone.get_current_timezone()).isoformat()
+            event=s.capture(self.user,payload)
+            self.assertEqual(event.shift.code,expected,clock.isoformat())
+            operational_day=workday-timedelta(days=1) if clock<=dt_time(4,37) else timezone.localdate()
+            self.assertEqual(event.operational_date,operational_day,clock.isoformat())
     @override_settings(RELEASE_MODE='confirmation')
     def test_capture_sheet_counts_physical_before_release(self):
         event=self.pack(200)
@@ -163,7 +204,7 @@ class BusinessAcceptance(TransactionTestCase):
         stream=BytesIO();workbook.save(stream)
         return SimpleUploadedFile('simple.xlsx',stream.getvalue())
 
-    def test_simple_template_current_year_customer_and_automatic_folios(self):
+    def test_simple_template_merges_same_part_in_week_and_keeps_automatic_folios(self):
         file=self.simple_template([[self.part.customer,'SLP',41,self.part.number,100],[self.part.customer,'SLP',43,self.part.number,200],[self.part.customer,'SLP',43,self.part.number,300]])
         content=file.read()
         batch=importing.preview(self.user,SimpleUploadedFile('simple.xlsx',content),'new',{'reason':'Simple'})
@@ -173,18 +214,34 @@ class BusinessAcceptance(TransactionTestCase):
         importing.commit(self.user,batch.pk,publish=True)
         batch.refresh_from_db()
         refs=[r['reference'] for r in batch.preview['rows']]
-        self.assertEqual(len(set(refs)),3)
+        self.assertEqual(len(set(refs)),2)
         for ref in refs:self.assertRegex(ref,r'^ORD-\d{4}-\d{6,}$')
         before=Demand.objects.count()
+        self.assertEqual(before,3)
+        self.assertEqual(Demand.objects.get(program__week=43).quantity,500)
         repeated=importing.preview(self.user,SimpleUploadedFile('simple.xlsx',content),'new',{'reason':'Simple'})
         importing.commit(self.user,repeated.pk,publish=True)
         self.assertEqual(repeated.pk,batch.pk);self.assertEqual(Demand.objects.count(),before)
-        self.assertEqual(list(Demand.objects.filter(reference__in=refs).values_list('reference',flat=True).order_by('reference')),sorted(refs))
+        self.assertEqual(set(Demand.objects.filter(reference__in=refs).values_list('reference',flat=True)),set(refs))
 
     def test_template_has_only_operational_columns(self):
         response=self.client.get('/api/template/')
         sheet=load_workbook(BytesIO(response.content)).active
-        self.assertEqual(list(next(sheet.values)),['cliente','destino_o_ambito','semana_programa','numero_parte','cantidad_programada'])
+        self.assertEqual(list(next(sheet.values)),['numero_parte','cantidad_programada','semana_programa'])
+
+    def test_new_import_can_sum_or_replace_same_part_in_existing_week(self):
+        first=importing.preview(self.user,self.simple_template([[self.part.customer,'SLP',43,self.part.number,100]]),'new',{'reason':'First load'})
+        importing.commit(self.user,first.pk)
+        summed=importing.preview(self.user,self.simple_template([[self.part.customer,'SLP',43,self.part.number,60]]),'new',{'reason':'Add quantity','duplicate_action':'sum'})
+        self.assertTrue(summed.preview['rows'][0]['duplicate_existing'])
+        self.assertEqual(summed.preview['rows'][0]['quantity_after'],160)
+        importing.commit(self.user,summed.pk)
+        self.assertEqual(Demand.objects.get(program__week=43).quantity,160)
+        replaced=importing.preview(self.user,self.simple_template([[self.part.customer,'SLP',43,self.part.number,30]]),'new',{'reason':'Replace quantity','duplicate_action':'replace'})
+        self.assertEqual(replaced.preview['rows'][0]['quantity_after'],30)
+        importing.commit(self.user,replaced.pk)
+        self.assertEqual(Demand.objects.filter(program__week=43).count(),1)
+        self.assertEqual(Demand.objects.get(program__week=43).quantity,30)
 
     def test_year_rollover_requires_a_new_preview(self):
         batch=importing.preview(self.user,self.simple_template([[self.part.customer,'SLP',43,self.part.number,100]]),'new',{'reason':'Year rollover'})
@@ -364,7 +421,7 @@ class BusinessAcceptance(TransactionTestCase):
         self.assertEqual(Capture.objects.count(),1)
 
     def test_17_night_and_late_capture(self):
-        p=self.payload(10);p['effective_at']=(timezone.now()-timedelta(days=1)).isoformat();p['operational_date']=str(timezone.localdate()-timedelta(days=2))
+        p=self.payload(10);late=timezone.make_aware(datetime.combine(timezone.localdate()-timedelta(days=1),dt_time(10)),timezone.get_current_timezone());p['effective_at']=late.isoformat();p['operational_date']=str(timezone.localdate()-timedelta(days=2))
         event=s.capture(self.user,p)
         self.assertNotEqual(event.created_at.date(),event.operational_date)
 

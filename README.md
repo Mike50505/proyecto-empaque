@@ -42,6 +42,8 @@ docker compose exec backend python manage.py sync_universe
 
 Interfaz: http://127.0.0.1:58080/; backend: 58000; PostgreSQL: 55432. Puertos enlazados solo a loopback; recursos con prefijo `empaques-mesa`. Se puede ejecutar junto a otros proyectos. No modifica proxies ni bases existentes. La imagen backend aplica migraciones y roles al iniciar. Para producción, usar HTTPS con un proxy autorizado, `DJANGO_DEBUG=0`, dominios precisos en `DJANGO_ALLOWED_HOSTS`, cookies seguras y credenciales separadas; no exponer el servidor de desarrollo. PostgreSQL y evidencias privadas requieren almacenamiento persistente. La carpeta `private` nunca se sirve por HTTP.
 
+En Docker Desktop, expanda **empaques-mesa** y abra el puerto **58080** del servicio **frontend**. Deben estar iniciados `db`, `backend` y `frontend`; iniciar solo `db` no abre la aplicación. Los tres servicios tienen reinicio automático, salvo que se detengan manualmente. El servidor local de desarrollo y el backend de Docker comparten el puerto 58000: detenga el servidor Python local antes de iniciar el backend en Docker.
+
 ## Operación
 
 1. Sincronizar el catálogo; validar empleados, turnos, clientes y destinos.
