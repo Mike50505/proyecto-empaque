@@ -110,25 +110,10 @@ export default function App(){
 function Metric({label,value,caption,icon:Icon,green,progress}){return <div className={'metric '+(green?'green':'')}><div className="metric-title">{label}<Icon size={19}/></div><strong>{value}</strong>{progress!=null&&<div className="progress"><span style={{width:Math.min(progress,100)+'%'}}/></div>}<small>{green&&<span className="small-dot"/>}{caption}</small></div>}
 
 function FloorTable({rows,canCapture,onCapture,onRevise,tv}){
- const [page,setPage]=useState(0),[tvSize,setTvSize]=useState(8);const size=tv?tvSize:20;
- useEffect(()=>{
-  if(!tv)return;
-  const element=document.querySelector('.tv .table-scroll');if(!element)return;
-  const measure=()=>{
-   const head=element.querySelector('thead')?.getBoundingClientRect().height||36;
-   const row=element.querySelector('tbody tr')?.getBoundingClientRect().height||42;
-   const available=Math.max(0,element.clientHeight-head-2);
-   const next=Math.max(1,Math.floor(available/Math.max(30,row)));
-   setTvSize(current=>current===next?current:next);
-  };
-  const observer=new ResizeObserver(measure);observer.observe(element);
-  const frame=requestAnimationFrame(measure);
-  return()=>{observer.disconnect();cancelAnimationFrame(frame)};
- },[tv,rows.length]);
- useEffect(()=>setPage(0),[rows.length,size]);
- useEffect(()=>{if(!tv||rows.length<=size)return;const timer=setInterval(()=>setPage(p=>(p+1)%Math.ceil(rows.length/size)),15000);return()=>clearInterval(timer)},[tv,rows.length,size]);
+ const [page,setPage]=useState(0);const size=20;
+ useEffect(()=>setPage(0),[rows.length]);
  if(!rows.length)return <Empty/>;
- if(tv)return <FloorTableWide rows={rows.slice(page*size,(page+1)*size)} canCapture={canCapture} onCapture={onCapture}/>;
+ if(tv)return <FloorTableWide rows={rows} canCapture={canCapture} onCapture={onCapture}/>;
  return <><div className="table-scroll"><table><thead><tr><th>Prioridad</th><th>Número de parte</th><th>Cliente / ámbito</th><th>Semana de trabajo / origen</th><th className="numeric">Programa</th><th className="numeric">Pendiente</th><th className="numeric shift-head">A <span>del día</span></th><th className="numeric shift-head">B <span>del día</span></th><th>Avance</th>{(canCapture||onRevise)&&<th/>}</tr></thead><tbody>{rows.slice(page*size,(page+1)*size).map(r=><tr key={r.id} className={isOrderComplete(r)?'order-completed':undefined}><td><span className={'priority p'+r.priority}>{r.priority===1?'Alta':r.priority===2?'Normal':'Baja'}</span></td><td><b className="part-number">{r.part}</b>{isOrderComplete(r)&&<span className="completed-order-badge">Terminada</span>}<small className="part-detail">Ø {r.diameter||'Sin especificar'}{!r.published?' · Borrador':''}</small></td><td><span className="client-name">{r.client}</span><small className="part-detail">{r.scope||'Sin ámbito especificado'}</small></td><td><span className="week-tag">S{r.week}</span><small className="year">{r.year}</small></td><td className="numeric">{n(r.quantity)}</td><td className="numeric pending-number">{n(r.pending)}</td><td className="numeric shift-value">{r.A?n(r.A):'—'}</td><td className="numeric shift-value">{r.B?n(r.B):'—'}</td><td><div className="row-progress"><span>{r.quantity?Math.round(100*r.applied/r.quantity)+'%':'N/A'}</span><div className="progress"><span style={{width:(r.quantity?Math.min(100,100*r.applied/r.quantity):0)+'%'}}/></div></div></td>{(canCapture||onRevise)&&<td><div className="row-actions">{canCapture&&r.published&&<button className="capture-button" onClick={()=>onCapture(r)}><Plus size={15}/>Capturar</button>}{onRevise&&<button className="icon-btn" aria-label={'Revisar programa '+r.part} onClick={()=>onRevise(r)}><Settings size={15}/></button>}</div></td>}</tr>)}</tbody></table></div>{rows.length>size&&<div className="pagination"><button className="secondary" disabled={page===0} onClick={()=>setPage(p=>p-1)}>Anterior</button><span>{page+1} / {Math.ceil(rows.length/size)}</span><button className="secondary" disabled={(page+1)*size>=rows.length} onClick={()=>setPage(p=>p+1)}>Siguiente</button></div>}</>
 }
 
@@ -169,7 +154,7 @@ function Programs({catalog,mutate,onNavigate,onReview}){
 
 
 function FloorTableWide({rows,canCapture,onCapture}){
- return <div className="table-scroll floor-table"><table><thead><tr>
+ return <div className="table-scroll floor-table" tabIndex={0} role="region" aria-label="Órdenes de empaque, desplazamiento manual"><table><thead><tr>
   <th>Cliente / destino</th><th>Número de parte</th><th>Diámetro</th><th>Semana</th>
   <th className="numeric">Programado</th><th className="numeric">Empacado</th><th className="numeric">Por liberar</th>
   <th className="numeric">Pendiente</th><th>Cumplimiento</th>{canCapture&&<th>Acción</th>}

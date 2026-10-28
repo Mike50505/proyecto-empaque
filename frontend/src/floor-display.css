@@ -163,3 +163,7 @@ body:has(.app.tv){overflow:hidden}
 @media(max-height:760px){
  .tv .metric,.tv .metric.green{min-height:58px;padding:6px 10px}
 }
+
+/* All floor orders remain in one manually scrollable table. */
+.tv .table-scroll.floor-table { overflow-y:auto; overflow-x:auto; scrollbar-gutter:stable; touch-action:pan-x pan-y; overscroll-behavior:contain; }
+.tv .table-scroll.floor-table:focus-visible { outline:2px solid var(--blue); outline-offset:-2px; }
