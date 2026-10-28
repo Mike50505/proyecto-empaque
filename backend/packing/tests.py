@@ -56,6 +56,15 @@ class BusinessAcceptance(TransactionTestCase):
 
     def pack(self,quantity,line=None,shift='A'): return s.capture(self.user,self.payload(quantity,line,shift))
 
+    def pending_capture(self,quantity):
+        # Historical rows predate release in the capture form.
+        event=self.pack(quantity)
+        event.allocations.all().delete()
+        event.released=False;event.released_by=None;event.inspector_payroll=''
+        event.save()
+        return event
+
+
     def test_01_partial_close_persisted(self):
         self.pack(200);self.assertEqual(s.applied(self.line),200)
         self.pack(100,shift='B');self.assertEqual(s.applied(Demand.objects.get(pk=self.line.pk)),300)
@@ -65,20 +74,53 @@ class BusinessAcceptance(TransactionTestCase):
         self.pack(200);self.pack(50);self.assertEqual(s.applied(self.line),250)
 
     @override_settings(RELEASE_MODE='declared')
-    def test_capture_accepts_unregistered_packer_and_ignores_old_inspector(self):
+    def test_capture_accepts_unregistered_payrolls_and_releases_inline(self):
         payload=self.payload(10);payload['packer']='TEMP-UNREGISTERED-55';payload['inspector']='TEST-I'
         event=s.capture(self.user,payload)
         self.assertEqual(event.packer_payroll,'TEMP-UNREGISTERED-55')
         self.assertIsNone(event.packer)
         self.assertIsNone(event.inspector)
-        self.assertFalse(event.released)
+        self.assertTrue(event.released)
+        self.assertEqual(event.inspector_payroll,'TEST-I')
+        self.assertEqual(event.released_by,self.user)
+        self.assertEqual(s.applied(self.line),10)
 
     def test_release_accepts_unregistered_inspector_payroll(self):
-        event=self.pack(10)
+        event=self.pending_capture(10)
         released=s.release(self.user,event.pk,'QA-TEMP-998')
         self.assertTrue(released.released)
         self.assertEqual(released.inspector_payroll,'QA-TEMP-998')
         self.assertIsNone(released.inspector)
+
+    def test_inline_release_requires_payroll_and_leaves_no_partial_capture(self):
+        for value in ['', '   ', None, 'X'*41]:
+            payload=self.payload(10);payload['inspector']=value
+            with self.assertRaises(ValidationError):
+                s.capture(self.user,payload)
+        self.assertEqual(Capture.objects.count(),0)
+        self.assertEqual(s.applied(self.line),0)
+
+    @override_settings(RELEASE_MODE='confirmation')
+    def test_capture_operator_declares_release_in_same_transaction(self):
+        operator=get_user_model().objects.create_user('capture-only')
+        operator.user_permissions.add(Permission.objects.get(codename='capture'))
+        payload=self.payload(25);payload['inspector']='  00045  '
+        event=s.capture(operator,payload)
+        self.assertTrue(event.released)
+        self.assertEqual(event.release_mode,'declared')
+        self.assertEqual(event.inspector_payroll,'00045')
+        self.assertEqual(event.released_by,operator)
+        self.assertEqual(s.applied(self.line),25)
+        self.assertEqual(s.capture(operator,payload).pk,event.pk)
+        self.assertEqual(s.applied(self.line),25)
+
+    def test_capture_api_returns_release_payroll_and_applied_quantity(self):
+        payload=self.payload(20);payload['inspector']='QA-UNREGISTERED'
+        response=self.client.post('/api/captures/',payload,format='json')
+        self.assertEqual(response.status_code,201,response.data)
+        self.assertTrue(response.data['released'])
+        self.assertEqual(response.data['inspector'],'QA-UNREGISTERED')
+        self.assertEqual(s.applied(self.line),20)
 
     def test_shift_is_inferred_from_effective_time_not_payload(self):
         payload=self.payload(10,shift='B');payload['shift']='A'
@@ -105,7 +147,7 @@ class BusinessAcceptance(TransactionTestCase):
             self.assertEqual(event.operational_date,operational_day,clock.isoformat())
     @override_settings(RELEASE_MODE='confirmation')
     def test_capture_sheet_counts_physical_before_release(self):
-        event=self.pack(200)
+        event=self.pending_capture(200)
         row=s.balance(self.user,{})['rows'][0]
         self.assertEqual(row['packed'],200)
         self.assertEqual(row['applied'],0)
@@ -121,7 +163,7 @@ class BusinessAcceptance(TransactionTestCase):
 
     @override_settings(RELEASE_MODE='confirmation')
     def test_unified_orders_filters_export_and_release_totals(self):
-        self.pack(200)
+        self.pending_capture(200)
         draft=self.make_line(90,43);draft.program.published=False;draft.program.save()
         data=s.balance(self.user,{'publication':'published','order_state':'release'})
         self.assertEqual([r['id'] for r in data['rows']],[self.line.pk])
@@ -411,7 +453,7 @@ class BusinessAcceptance(TransactionTestCase):
 
     @override_settings(RELEASE_MODE='confirmation')
     def test_15_release_once(self):
-        event=self.pack(100);self.assertEqual(s.applied(self.line),0)
+        event=self.pending_capture(100);self.assertEqual(s.applied(self.line),0)
         s.release(self.user,event.pk,'TEST-I');s.release(self.user,event.pk,'TEST-I')
         self.assertEqual(s.applied(self.line),100)
 

@@ -1,0 +1,8 @@
+.user-role-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; padding:20px; }
+.user-role-cards article { border:1px solid var(--line); background:var(--raised); border-radius:12px; padding:18px; }
+.user-role-cards b { display:block; margin-bottom:8px; }
+.user-role-cards span,.user-role-description { color:var(--muted); font-size:12px; line-height:1.6; }
+.user-editor { max-width:640px; }
+.users-table { min-width:680px; }
+.users-panel .notice { margin-inline:20px; }
+@media(max-width:650px) { .user-role-cards { grid-template-columns:1fr; gap:10px; padding:16px; } }

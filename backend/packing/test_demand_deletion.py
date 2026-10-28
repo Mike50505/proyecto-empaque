@@ -32,7 +32,7 @@ class DemandDeletionTests(TestCase):
         self.line.program.published=True;self.line.program.save()
         Shift.objects.create(code='A');Employee.objects.create(payroll='DELETE-P',name='Synthetic')
         effective=timezone.make_aware(datetime.combine(timezone.localdate()-timedelta(days=1),dt_time(10)),timezone.get_current_timezone())
-        services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':''})
+        services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':'DELETE-I'})
         response=self.client.delete(f'/api/demands/{self.line.pk}/',{'reason':'Test'},format='json')
         self.assertEqual(response.status_code,200,response.data)
         self.line.refresh_from_db()

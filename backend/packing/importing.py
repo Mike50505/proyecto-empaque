@@ -352,8 +352,6 @@ def publish_batch(actor,batch):
         if not program.published:
             program.published=True;program.save(update_fields=['published'])
             audit(actor,'publication',program,'Publicación desde importación revisada',batch=batch.pk,published=True)
-    from .week_carry import apply_waiting_credits
-    apply_waiting_credits(actor,programs)
 
 def result(batch):
     programs=list(batch_programs(batch).values('id','client','scope','year','week','published','group_id','group__name'))

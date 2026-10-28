@@ -83,8 +83,7 @@ def capture(actor, payload):
     if not line.program.published: raise ValidationError('El programa todavía no está publicado.')
     validate_part_customer(line.part,line.program.client)
     qty = positive(payload['quantity'])
-    from .week_carry import members, group_packing_pending, allocate_work
-    if qty > group_packing_pending(members(line)) and not payload.get('accept_excess'):
+    if qty > packing_pending(line) and not payload.get('accept_excess'):
         raise ValidationError('La cantidad genera excedente; revisa y confirma el excedente previsto.')
     effective = parse_time(payload['effective_at'])
     local_effective=timezone.localtime(effective)
@@ -102,11 +101,13 @@ def capture(actor, payload):
     if abs((timezone.localtime(effective).date()-day).days)>1: raise ValidationError('La fecha operativa debe corresponder a la jornada efectiva.')
     payroll=str(payload.get('packer','')).strip()
     if not payroll: raise ValidationError('La nómina del empacador es obligatoria.')
-    inspector = None
-    released = False
-    event = Capture.objects.create(key=key, fingerprint=fingerprint, target=line, quantity=qty, effective_at=effective, operational_date=day, shift=Shift.objects.get(code=shift_code), packer_payroll=payroll, inspector=inspector, actor=actor, released=released, release_mode=settings.RELEASE_MODE, notes=payload.get('notes',''))
-    if released: allocate_work(event)
-    audit(actor,'capture',event,quantity=qty)
+    inspector_payroll = str(payload.get('inspector', '') or '').strip()
+    if not inspector_payroll or len(inspector_payroll) > 40:
+        raise ValidationError('Indica el número de nómina de quien libera (máximo 40 caracteres).')
+    released = True
+    event = Capture.objects.create(key=key, fingerprint=fingerprint, target=line, quantity=qty, effective_at=effective, operational_date=day, shift=Shift.objects.get(code=shift_code), packer_payroll=payroll, inspector_payroll=inspector_payroll, actor=actor, released=released, released_by=actor, release_mode='declared', notes=payload.get('notes',''))
+    if released: allocate(event, line)
+    audit(actor,'capture',event,quantity=qty,inspector_payroll=inspector_payroll,released=True)
     return event
 
 @transaction.atomic
@@ -121,8 +122,7 @@ def release(actor, pk, inspector_payroll):
         event.inspector = None; event.inspector_payroll = payroll
         event.released = True; event.released_by = actor; event.save()
         if not event.target.archived:
-            from .week_carry import allocate_work
-            allocate_work(event)
+            allocate(event, event.target)
         audit(actor,'release',event)
     return event
 
@@ -208,7 +208,7 @@ def demand_queryset(user, params, working=False, include_archived=False):
 def balance(user, params):
     lock_ledger()
     day=date.fromisoformat(params.get('date') or str(timezone.localdate()))
-    lines=list(demand_queryset(user,params,working=True))
+    lines=list(demand_queryset(user,params))
     ids=[line.pk for line in lines]
     applied_map={a['demand']:a['n'] for a in Allocation.objects.filter(demand_id__in=ids,active=True).values('demand').annotate(n=Sum('quantity'))}
     packed_map={a['target']:a['n'] for a in Capture.objects.filter(target_id__in=ids,voided=False).values('target').annotate(n=Sum('quantity'))}
@@ -239,8 +239,6 @@ def balance(user, params):
         # duplicar créditos reasignados ni cantidades de saldos iniciales.
         unassigned_physical=row['packed']-allocated_from_captures.get(row['id'],0)
         row['packing_pending']=max(row['quantity']-row['applied']-unassigned_physical,0)
-    from .week_carry import project
-    rows=project(rows,lines,params)
     state=params.get('order_state','all')
     predicates={'pending':lambda r:r['pending']>0,'packing':lambda r:r['packing_pending']>0,'release':lambda r:r['pending_release']>0,'complete':lambda r:r['pending']==0,'credit':lambda r:r['credit']>0}
     if state in predicates: rows=[r for r in rows if predicates[state](r)]

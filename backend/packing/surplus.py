@@ -11,6 +11,36 @@ from . import services as s
 
 
 @transaction.atomic
+def inventory(actor, params):
+    """Released, unassigned pieces; reading never moves them to another order."""
+    s.require(actor, 'consult')
+    s.lock_ledger()
+    allowed = s.demand_queryset(actor, params, include_archived=True).filter(program__published=True)
+    captures = Capture.objects.filter(target__in=allowed, released=True, voided=False).select_related('target__part', 'target__program', 'packer', 'inspector').annotate(used=Coalesce(Sum('allocations__quantity', filter=Q(allocations__active=True)), 0)).filter(quantity__gt=F('used'))
+    openings = OpeningBalance.objects.filter(demand__in=allowed).select_related('demand__part', 'demand__program').annotate(used=Coalesce(Sum('allocations__quantity', filter=Q(allocations__active=True)), 0)).filter(applied__gt=F('used')-F('credit'))
+    rows = []
+    for source in [*captures, *openings]:
+        opening = isinstance(source, OpeningBalance)
+        line = source.demand if opening else source.target
+        quantity = (source.applied + source.credit if opening else source.quantity) - source.used
+        rows.append({
+            'id': f'{"opening" if opening else "capture"}-{source.pk}',
+            'source': source.pk, 'kind': 'Saldo inicial' if opening else 'Captura',
+            'demand': line.pk, 'reference': line.reference,
+            'part': line.attributes_snapshot.get('number', line.part.number),
+            'diameter': line.attributes_snapshot.get('diameter', line.part.diameter),
+            'client': client_group(line.program.client), 'scope': line.program.scope,
+            'year': line.program.year, 'week': line.program.week,
+            'quantity': quantity, 'archived': line.archived,
+            'date': timezone.localtime(source.cutoff).date() if opening else source.operational_date,
+            'packer': '' if opening else source.packer_payroll or (source.packer.payroll if source.packer else ''),
+            'inspector': '' if opening else source.inspector_payroll or (source.inspector.payroll if source.inspector else ''),
+        })
+    rows.sort(key=lambda row: (row['date'], row['id']), reverse=True)
+    return {'rows': rows, 'total': sum(row['quantity'] for row in rows), 'updated_at': timezone.now().isoformat()}
+
+
+@transaction.atomic
 def apply_all(actor):
     s.require(actor, 'plan')
     s.lock_ledger()

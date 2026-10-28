@@ -22,6 +22,7 @@ from . import services as s, importing, universe, program_deletion
 from .models import *
 from .part_validation import validate_part_customer, validate_program
 from .client_groups import CLIENT_GROUPS, client_group, client_filter
+from . import user_management
 
 def guarded(fn):
     from functools import wraps
@@ -32,7 +33,8 @@ def guarded(fn):
         except (ValueError,TypeError,KeyError) as e: raise ValidationError('Datos inválidos o incompletos; verifica el formulario.') from e
     return wrap
 
-def roles(user): return {r:user.is_superuser or user.has_perm('packing.'+r) for r in ['consult','capture','plan','release']}
+def roles(user):
+    return {**{r:user.is_superuser or user.has_perm('packing.'+r) for r in ['consult','capture','plan','release']}, 'manage_users':user_management.can_manage_users(user), 'admin':bool(user.is_superuser)}
 
 @api_view(['GET','POST','DELETE'])
 @permission_classes([AllowAny])
@@ -43,7 +45,28 @@ def session(request):
         if not user: return Response({'detail':'Usuario o contraseña incorrectos.'},status=400)
         login(request,user)
     elif request.method=='DELETE': logout(request)
-    return Response({'authenticated':request.user.is_authenticated,'username':request.user.get_username(),'roles':roles(request.user),'csrf':get_token(request),'release_mode':settings.RELEASE_MODE})
+    return Response({'authenticated':request.user.is_authenticated,'username':request.user.get_username(),'roles':roles(request.user),'role':user_management.role_for(request.user),'user_id':request.user.pk,'csrf':get_token(request),'release_mode':'declared'})
+
+
+@api_view(['GET', 'POST'])
+@guarded
+def users(request):
+    user_management.require_management(request.user)
+    if request.method == 'POST':
+        user = user_management.save_user(request.user, request.data)
+        return Response(user_management.serialize_user(user, request.user), status=201)
+    from django.contrib.auth import get_user_model
+    return Response([user_management.serialize_user(user, request.user) for user in get_user_model().objects.prefetch_related('groups__permissions', 'user_permissions').order_by('username')])
+
+
+@api_view(['PATCH'])
+@guarded
+def user_detail(request, pk):
+    user = user_management.save_user(request.user, request.data, pk)
+    if pk == request.user.pk and request.data.get('password'):
+        from django.contrib.auth import update_session_auth_hash
+        update_session_auth_hash(request, user)
+    return Response(user_management.serialize_user(user, request.user))
 
 @api_view(['GET'])
 def catalog(request):
@@ -52,7 +75,7 @@ def catalog(request):
     programs=Program.objects.filter(**({} if roles(request.user)['plan'] else {'published':True}))
     parts=[{**part,'universe_customer':part['customer'],'customer':client_group(part['customer'])} for part in Part.objects.order_by('number').values()]
     program_rows=[{**program,'client':client_group(program['client'])} for program in programs.values()]
-    work_weeks=[{'year':day.isocalendar().year,'week':day.isocalendar().week} for day in Demand.objects.filter(program__in=programs,carry_to__isnull=False,archived=False).values_list('carry_to',flat=True).distinct()]
+    work_weeks=[]
     return Response({'clients':list(CLIENT_GROUPS),'part_clients':list(CLIENT_GROUPS),'current_year':timezone.localdate().year,'groups':list(BalanceGroup.objects.values()),'employees':list(Employee.objects.filter(active=True).values()),'shifts':list(Shift.objects.values()),'parts':parts,'programs':program_rows,'work_weeks':work_weeks,'integration':{'last_sync':state.last_sync if state else None,'error':state.error if state else '', 'local_parts':Part.objects.count()},'today':str(timezone.localdate())})
 
 @api_view(['POST'])
@@ -128,7 +151,7 @@ def capture_action(request,pk,action):
         e=s.correct(request.user,pk,request.data['quantity'],request.data['reason'],request.data['key'])
         return Response(event_data(e) if e else {'voided':True})
     if action=='request-correction':
-        s.require(request.user,'capture')
+        s.require(request.user,'plan')
         event=Capture.objects.get(pk=pk)
         if not event.target.program.published: raise ValidationError('Programa no disponible en piso.')
         reason=request.data.get('reason','').strip()
@@ -180,9 +203,6 @@ def program_action(request,pk):
     if request.data.get('published') and not p.group.active: raise ValidationError('Grupo desactivado.')
     p.published=bool(request.data['published']); p.save(update_fields=['published'])
     s.audit(request.user,'publication',p,published=p.published)
-    if p.published:
-        from .week_carry import apply_waiting_credits
-        apply_waiting_credits(request.user,[p])
     return Response({'id':p.pk,'published':p.published})
 
 
@@ -233,11 +253,11 @@ def apply_surplus(request):
     return Response(apply_all(request.user))
 
 
-@api_view(['POST'])
+@api_view(['GET'])
 @guarded
-def next_week(request,pk):
-    from .week_carry import move
-    return Response(move(request.user,pk,request.data))
+def surplus_inventory(request):
+    from .surplus import inventory
+    return Response(inventory(request.user,request.query_params))
 
 @api_view(['GET','POST'])
 @guarded
@@ -310,10 +330,10 @@ def export(request):
         s.require(request.user,'plan'); data=Snapshot.objects.get(pk=request.query_params['snapshot']).payload
     if 'order_state' in request.query_params and not request.query_params.get('snapshot'):
         keys=['client','scope','year','week','reference','part','diameter','quantity','packed','pending_release','applied','packing_pending','pending','credit']
-        headers=['Cliente','Destino','Año','Semana de trabajo','Folio de orden','Número de parte','Diámetro','Programado','Empacado','Por liberar','Aplicado','Por empacar','Pendiente por cumplir','Excedente','Trasladado desde']
-        return xlsx_response([headers]+[[r[k] for k in keys]+[', '.join(f"{origin['year']}/S{origin['week']}" for origin in r.get('origins',[]))] for r in data['rows']],'ordenes-empaque')
+        headers=['Cliente','Destino','Año','Semana de trabajo','Folio de orden','Número de parte','Diámetro','Programado','Empacado','Por liberar','Aplicado','Por empacar','Pendiente por cumplir','Excedente']
+        return xlsx_response([headers]+[[r[k] for k in keys] for r in data['rows']],'ordenes-empaque')
     keys=['group','client','scope','year','week','reference','part','diameter','original','quantity','applied','pending','credit','A','B']
-    return xlsx_response([['Grupo','Cliente','Ámbito','Año','Semana de trabajo','Renglón','Número de parte','Diámetro','Original','Vigente','Aplicado','Pendiente','Excedente','A del día','B del día','Trasladado desde']]+[[r[k] for k in keys]+[', '.join(f"{origin['year']}/S{origin['week']}" for origin in r.get('origins',[]))] for r in data['rows']],'balance-empaques')
+    return xlsx_response([['Grupo','Cliente','Ámbito','Año','Semana de trabajo','Renglón','Número de parte','Diámetro','Original','Vigente','Aplicado','Pendiente','Excedente','A del día','B del día']]+[[r[k] for k in keys] for r in data['rows']],'balance-empaques')
 
 @api_view(['GET'])
 @never_cache

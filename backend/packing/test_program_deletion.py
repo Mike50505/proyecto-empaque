@@ -78,7 +78,7 @@ class ProgramDeletionTests(TestCase):
         Shift.objects.create(code='A');Employee.objects.create(payroll='DELETE-P',name='Synthetic')
         reviewed=self.review().data
         effective=timezone.make_aware(datetime.combine(timezone.localdate()-timedelta(days=1),dt_time(10)),timezone.get_current_timezone())
-        event=services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':''})
+        event=services.capture(self.user,{'key':str(uuid.uuid4()),'demand':self.line.pk,'quantity':10,'effective_at':effective.isoformat(),'operational_date':str(timezone.localdate()),'shift':'A','packer':'DELETE-P','inspector':'DELETE-I'})
         self.assertEqual(self.delete(review=reviewed).status_code,400)
         event.voided=True;event.save()
         self.assertFalse(self.review().data['can_delete'])
