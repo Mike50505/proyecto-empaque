@@ -4,7 +4,7 @@ Captura y Balance se sustituyeron por una sola entrada: **Órdenes**. Los enlace
 
 ## Aplicar excedentes a la siguiente semana
 
-Planeación puede usar **Pasar excedente a la siguiente semana** en una orden publicada que tenga crédito disponible. La confirmación indica pieza, destino, semanas y cantidad. La operación aplica únicamente excedentes liberados y saldos iniciales remanentes a órdenes publicadas compatibles de la siguiente semana ISO. No mueve pendientes, no cambia la semana de compromiso ni crea capturas físicas.
+Planeación puede usar **Pasar excedente a la siguiente semana** en una orden publicada que tenga crédito disponible y una orden publicada compatible en la semana ISO inmediata siguiente. La interfaz solo muestra el botón si esa orden destino tiene pendiente por empacar. La confirmación indica pieza, destino, semanas y cantidad. La operación aplica únicamente excedentes liberados y saldos iniciales remanentes. No mueve pendientes, no cambia la semana de compromiso ni crea capturas físicas.
 
 La compatibilidad exige la misma identidad de pieza, cliente y destino. El crédito reduce lo pendiente por empacar en el destino y cualquier cantidad no utilizada permanece disponible en Excedentes. Si no hay una orden compatible o ya está cubierta, el servidor conserva el crédito. La operación requiere permiso de Planeación, respeta periodos cerrados, valida que el saldo no haya cambiado desde la confirmación y registra el resultado en auditoría. Los reintentos con la misma clave son idempotentes.
 

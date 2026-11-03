@@ -232,6 +232,7 @@ def balance(user, params):
         credit=credits.get(line.pk,0)
         rows.append({'catalog_error':catalog_error,'id':line.pk,'program':line.program_id,'reference':line.reference,'group':line.program.group.name,'group_id':line.program.group_id,'client':client_group(line.program.client),'scope':line.program.scope,'year':line.program.year,'week':line.program.week,'part':line.attributes_snapshot.get('number',line.part.number),'diameter':line.attributes_snapshot.get('diameter',line.part.diameter),'original':line.original,'quantity':line.quantity,'applied':n,'pending':max(line.quantity-n,0),'credit':credit,'A':shift_totals.get('A',0),'B':shift_totals.get('B',0),'priority':line.priority,'published':line.program.published,'due_on':str(line.due_on) if line.due_on else None})
     quantity=sum(r['quantity'] for r in rows); done=sum(r['applied'] for r in rows)
+    lines_by_id={line.pk:line for line in lines}
     for row in rows:
         row['packed']=packed_map.get(row['id'],0)
         row['pending_release']=pending_release_map.get(row['id'],0)
@@ -239,6 +240,20 @@ def balance(user, params):
         # duplicar créditos reasignados ni cantidades de saldos iniciales.
         unassigned_physical=row['packed']-allocated_from_captures.get(row['id'],0)
         row['packing_pending']=max(row['quantity']-row['applied']-unassigned_physical,0)
+        row['next_week_compatible']=False
+        if row['credit']>0 and row['published'] and not row['catalog_error']:
+            origin=lines_by_id[row['id']]
+            next_week_start=origin.program.starts_on+timedelta(days=7)
+            candidates=Demand.objects.filter(
+                part_id=origin.part_id,
+                program__starts_on=next_week_start,
+                program__published=True,
+                archived=False,
+            ).select_related('program','part')
+            row['next_week_compatible']=any(
+                compatible(origin,target) and packing_pending(target)>0
+                for target in candidates
+            )
     state=params.get('order_state','all')
     predicates={'pending':lambda r:r['pending']>0,'packing':lambda r:r['packing_pending']>0,'release':lambda r:r['pending_release']>0,'complete':lambda r:r['pending']==0,'credit':lambda r:r['credit']>0}
     if state in predicates: rows=[r for r in rows if predicates[state](r)]

@@ -7,7 +7,7 @@ try {
  for(const width of [1440,390]) {
   const page=await browser.newPage({viewport:{width,height:1000}});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  const row={id:1,part:'EXCESS-01',reference:'TEST-1',client:'LENNOX 1',scope:'SLP',year:2026,week:43,quantity:100,original:100,packed:130,pending_release:0,applied:100,pending:0,packing_pending:0,credit:30,A:130,B:0,published:true,priority:2};
+  const row={id:1,part:'EXCESS-01',reference:'TEST-1',client:'LENNOX 1',scope:'SLP',year:2026,week:43,quantity:100,original:100,packed:130,pending_release:0,applied:100,pending:0,packing_pending:0,credit:30,next_week_compatible:true,A:130,B:0,published:true,priority:2};
   await page.route('**/api/**',async route=>{
    const url=new URL(route.request().url());let data;
    if(route.request().method()!=='GET')throw new Error('This check must be read-only');
