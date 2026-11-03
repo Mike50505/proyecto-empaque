@@ -52,6 +52,8 @@ En Docker Desktop, expanda **empaques-mesa** y abra el puerto **58080** del serv
 4. Revisar pieza, compromiso, responsables, fecha, turno y excedente; confirmar. El servidor devuelve folio y saldos.
 5. Consultar dashboard e historial; emitir Excel, imprimir o conservar un corte.
 
+En **Órdenes**, **Añadir extra** registra piezas fuera de una orden: número de parte libre, cantidad y nóminas del empacador y de quien libera. El sistema conserva fecha y turno, muestra el registro en Historial y el Excel de movimientos, y no modifica programas ni balances.
+
 Guías: [operador](docs/manual_operador.md), [Planeación](docs/manual_planeacion.md), [reglas](docs/reglas_negocio.md), [fuentes](docs/analisis_fuentes.md), [migración](docs/migracion_y_conciliacion.md), [API y despliegue](docs/api_y_operacion.md).
 
 ## Verificación

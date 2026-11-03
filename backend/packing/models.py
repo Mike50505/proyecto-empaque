@@ -93,6 +93,24 @@ class Capture(models.Model):
         constraints = [models.CheckConstraint(condition=Q(quantity__gt=0), name='positive_capture')]
         indexes = [models.Index(fields=['operational_date', 'shift'])]
 
+class ExtraCapture(models.Model):
+    key = models.UUIDField(default=uuid.uuid4, unique=True)
+    fingerprint = models.CharField(max_length=64)
+    part_number = models.CharField(max_length=120)
+    quantity = models.PositiveIntegerField()
+    effective_at = models.DateTimeField()
+    operational_date = models.DateField()
+    shift = models.ForeignKey(Shift, on_delete=models.PROTECT)
+    packer_payroll = models.CharField(max_length=40)
+    inspector_payroll = models.CharField(max_length=40)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    hidden_from_history = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(quantity__gt=0), name='positive_extra_capture')]
+        indexes = [models.Index(fields=['operational_date', 'shift'], name='packing_ext_operat_0773b2_idx')]
+
 class OpeningBalance(models.Model):
     demand = models.ForeignKey(Demand, on_delete=models.PROTECT)
     applied = models.PositiveIntegerField(default=0)

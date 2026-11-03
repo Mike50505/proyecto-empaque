@@ -102,6 +102,9 @@ def balance(request): return Response(s.balance(request.user,request.query_param
 def event_data(e):
     return {'id':e.pk,'key':str(e.key),'quantity':e.quantity,'part':e.target.attributes_snapshot.get('number',e.target.part.number),'demand':e.target_id,'client':client_group(e.target.program.client),'scope':e.target.program.scope,'year':e.target.program.year,'week':e.target.program.week,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer_payroll or (e.packer.payroll if e.packer else ''),'inspector':e.inspector_payroll or (e.inspector.payroll if e.inspector else None),'actor':e.actor.get_username(),'released':e.released,'release_mode':e.release_mode,'voided':e.voided,'hidden_from_history':e.hidden_from_history,'credit':s.available(e),'allocations':list(e.allocations.values('demand','quantity','active','created_at')),'notes':e.notes}
 
+def extra_event_data(e):
+    return {'id':f'EX-{e.pk}','extra_id':e.pk,'type':'extra','key':str(e.key),'quantity':e.quantity,'part':e.part_number,'demand':None,'client':'','scope':'','year':None,'week':None,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer_payroll,'inspector':e.inspector_payroll,'actor':e.actor.get_username(),'released':True,'release_mode':'declared','voided':False,'hidden_from_history':e.hidden_from_history,'credit':0,'allocations':[],'notes':e.notes}
+
 @api_view(['GET','POST'])
 @guarded
 def captures(request):
@@ -115,6 +118,7 @@ def captures(request):
         qs=qs.filter(hidden_from_history=True)
     else:
         qs=qs.filter(hidden_from_history=False)
+    if request.query_params.get('state')=='extra': qs=qs.none()
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
     if request.query_params.get('packer'): qs=qs.filter(Q(packer_payroll=request.query_params['packer'])|Q(packer__payroll=request.query_params['packer']))
@@ -130,7 +134,35 @@ def captures(request):
     if request.query_params.get('subclient'): qs=qs.filter(target__part__customer__iexact=request.query_params['subclient'])
     if request.query_params.get('scope'): qs=qs.filter(target__program__scope=request.query_params['scope'])
     if request.query_params.get('group'): qs=qs.filter(target__program__group_id=request.query_params['group'])
-    return Response([event_data(e) for e in qs])
+    events=[(e.created_at,event_data(e)) for e in qs]
+    extras=ExtraCapture.objects.select_related('shift','actor').order_by('-id')
+    state=request.query_params.get('state','')
+    if state=='hidden': extras=extras.filter(hidden_from_history=True)
+    else: extras=extras.filter(hidden_from_history=False)
+    if state in ['pending','voided']: extras=extras.none()
+    if request.query_params.get('date'): extras=extras.filter(operational_date=request.query_params['date'])
+    if request.query_params.get('shift'): extras=extras.filter(shift__code=request.query_params['shift'])
+    if request.query_params.get('packer'): extras=extras.filter(packer_payroll=request.query_params['packer'])
+    if request.query_params.get('inspector'): extras=extras.filter(inspector_payroll=request.query_params['inspector'])
+    if request.query_params.get('actor'): extras=extras.filter(actor__username=request.query_params['actor'])
+    if request.query_params.get('search'): extras=extras.filter(part_number__icontains=request.query_params['search'])
+    if any(request.query_params.get(k) for k in ['week','year','client','subclient','scope','group']): extras=extras.none()
+    events.extend((e.created_at,extra_event_data(e)) for e in extras)
+    events.sort(key=lambda item:item[0],reverse=True)
+    return Response([item[1] for item in events])
+
+@api_view(['POST'])
+@guarded
+def extras(request):
+    event=s.capture_extra(request.user,request.data)
+    return Response(extra_event_data(event),status=201)
+
+@api_view(['POST'])
+@guarded
+def extra_history_visibility(request,pk):
+    hidden=bool(request.data.get('hidden'))
+    event=s.set_extra_history_visibility(request.user,pk,hidden,request.data.get('reason'))
+    return Response(extra_event_data(event))
 
 @api_view(['GET'])
 @guarded
@@ -369,6 +401,19 @@ def production_export(request):
     if request.query_params.get('state')=='hidden':
         s.require(request.user,'plan'); qs=qs.filter(hidden_from_history=True)
     else: qs=qs.filter(hidden_from_history=False)
+    if request.query_params.get('state')=='extra': qs=qs.none()
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
-    return xlsx_response([['Folio','Pieza','Cantidad','Fecha efectiva','Registro','Fecha operativa','Turno','Empacador','Inspector','Capturista','Liberada','Anulada']]+[[e.pk,e.target.part.number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer_payroll or (e.packer.payroll if e.packer else ''),e.inspector_payroll or (e.inspector.payroll if e.inspector else ''),e.actor.username,e.released,e.voided] for e in qs],'movimientos-empaque')
+    extras=ExtraCapture.objects.select_related('shift','actor')
+    if request.query_params.get('state')=='hidden': extras=extras.filter(hidden_from_history=True)
+    else: extras=extras.filter(hidden_from_history=False)
+    if request.query_params.get('date'): extras=extras.filter(operational_date=request.query_params['date'])
+    if request.query_params.get('shift'): extras=extras.filter(shift__code=request.query_params['shift'])
+    if request.query_params.get('search'): extras=extras.filter(part_number__icontains=request.query_params['search'])
+    if any(request.query_params.get(k) for k in ['week','year','client','subclient','scope','group']):
+        extras=extras.none()
+    if request.query_params.get('state') in ['pending','voided']: extras=extras.none()
+    rows=[(e.created_at,[e.pk,'Orden',e.target.part.number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer_payroll or (e.packer.payroll if e.packer else ''),e.inspector_payroll or (e.inspector.payroll if e.inspector else ''),e.actor.username,e.released,e.voided]) for e in qs]
+    rows.extend((e.created_at,[f'EX-{e.pk}','Extra',e.part_number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer_payroll,e.inspector_payroll,e.actor.username,True,False]) for e in extras)
+    rows.sort(key=lambda item:item[0],reverse=True)
+    return xlsx_response([['Folio','Tipo','Pieza','Cantidad','Fecha efectiva','Registro','Fecha operativa','Turno','Empacador','Inspector','Capturista','Liberada','Anulada']]+[item[1] for item in rows],'movimientos-empaque')

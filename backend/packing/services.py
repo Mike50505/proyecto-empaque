@@ -111,6 +111,60 @@ def capture(actor, payload):
     return event
 
 @transaction.atomic
+def capture_extra(actor, payload):
+    require(actor, 'capture')
+    lock_ledger()
+    fingerprint=hashlib.sha256(json.dumps(payload,sort_keys=True,default=str).encode()).hexdigest()
+    try: key=uuid.UUID(str(payload['key']))
+    except (ValueError,KeyError): raise ValidationError('Identificador de envío inválido.')
+    existing=ExtraCapture.objects.filter(key=key).first()
+    if existing:
+        if existing.fingerprint!=fingerprint or existing.actor_id!=actor.id:
+            raise ValidationError('Conflicto: el identificador ya se utilizó con otro contenido.')
+        return existing
+    part_number=str(payload.get('part_number','')).strip()
+    if not part_number or len(part_number)>120:
+        raise ValidationError('Indica un número de parte de hasta 120 caracteres.')
+    qty=positive(payload.get('quantity'))
+    effective=parse_time(payload.get('effective_at'))
+    local_effective=timezone.localtime(effective)
+    minute=local_effective.hour*60+local_effective.minute
+    if 4*60+38<=minute<16*60+37: shift_code='A'
+    else: shift_code='B'
+    operational_date=date.fromisoformat(str(payload.get('operational_date','')))
+    if shift_code=='B' and minute<=4*60+37: operational_date=local_effective.date()-timedelta(days=1)
+    check_open(operational_date)
+    if effective>timezone.now(): raise ValidationError('La fecha de trabajo no puede estar en el futuro.')
+    if abs((local_effective.date()-operational_date).days)>1:
+        raise ValidationError('La fecha operativa debe corresponder a la jornada efectiva.')
+    packer=str(payload.get('packer','')).strip()
+    inspector=str(payload.get('inspector','')).strip()
+    if not packer or len(packer)>40: raise ValidationError('Indica la nómina del empacador (máximo 40 caracteres).')
+    if not inspector or len(inspector)>40: raise ValidationError('Indica la nómina de quien libera (máximo 40 caracteres).')
+    event=ExtraCapture.objects.create(key=key,fingerprint=fingerprint,part_number=part_number,
+        quantity=qty,effective_at=effective,operational_date=operational_date,
+        shift=Shift.objects.get(code=shift_code),packer_payroll=packer,
+        inspector_payroll=inspector,actor=actor,notes=str(payload.get('notes','')))
+    audit(actor,'extra_capture',event,'Captura extra fuera de orden',part_number=part_number,
+        quantity=qty,operational_date=str(operational_date),shift=shift_code,
+        packer_payroll=packer,inspector_payroll=inspector)
+    return event
+
+@transaction.atomic
+def set_extra_history_visibility(actor, pk, hidden, reason):
+    require(actor, 'plan')
+    lock_ledger()
+    reason=str(reason or '').strip()
+    if not reason: raise ValidationError('Indica el motivo del cambio en el historial.')
+    event=ExtraCapture.objects.select_for_update().get(pk=pk)
+    if event.hidden_from_history==hidden: return event
+    event.hidden_from_history=hidden
+    event.save(update_fields=['hidden_from_history'])
+    audit(actor,'history_hide' if hidden else 'history_restore',event,reason,
+        capture=f'EX-{event.pk}',quantity=event.quantity,part=event.part_number,hidden=hidden)
+    return event
+
+@transaction.atomic
 def release(actor, pk, inspector_payroll):
     require(actor,'release'); lock_ledger()
     event = Capture.objects.select_for_update().get(pk=pk)

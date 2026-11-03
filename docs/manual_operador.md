@@ -14,6 +14,8 @@ Revisa el resumen. Si hay excedente, confirma su cantidad prevista. Al guardar e
 
 Si falla la red no se anuncia guardado. El borrador se conserva en el navegador del equipo, asociado a usuario y renglón; al reabrir se reutiliza la clave del envío para evitar duplicación. El borrador es local y contiene nóminas: usar equipos de planta y cerrar sesión al terminar. No hay sincronización offline completa.
 
+Si el número de parte no tiene una orden cargada, en **Órdenes** pulsa **Añadir extra**. Registra número de parte, cantidad, nómina del empacador y nómina de quien libera. El extra se guarda en Historial con fecha y turno, pero no se asigna a una orden ni cambia el balance.
+
 En Historial revisa folios, responsables, estados y asignaciones. Una equivocación se solicita con motivo; el operador no modifica cantidades confirmadas ni programas. Calidad puede confirmar material pendiente según permisos. Planeación realiza correcciones conservando original y reemplazo.
 
 Dashboard muestra avance aplicado y empaque físico por separado. Exportar Excel usa los filtros de balance; imprimir permite llevar pendientes al pasillo. El modo pantalla muestra solamente consulta y actualiza cada 20 segundos; usar la cuenta Consulta dedicada del equipo, sin sesión de operador compartida.

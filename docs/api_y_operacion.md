@@ -9,6 +9,8 @@ La SPA y Django se sirven bajo un mismo origen. Autenticación por sesión Djang
 | POST /api/programs/ | Crear programa borrador y renglones (Planeación) |
 | POST /api/programs/ID/publication/ | Publicar/ocultar |
 | POST /api/captures/ | Nuevo evento idempotente |
+| POST /api/extras/ | Captura extra sin orden; no asigna demanda ni modifica balances |
+| POST /api/extras/ID/visibility/ | Planeación quita/restaura una captura extra del historial |
 | POST /api/captures/ID/release/ | Calidad libera una vez |
 | POST /api/captures/ID/correct/ | Planeación revierte/reemplaza |
 | POST /api/captures/ID/request-correction/ | Solicitud de operador |
