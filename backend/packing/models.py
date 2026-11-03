@@ -87,6 +87,7 @@ class Capture(models.Model):
     release_mode = models.CharField(max_length=20)
     released_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='released_captures')
     voided = models.BooleanField(default=False)
+    hidden_from_history = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(quantity__gt=0), name='positive_capture')]

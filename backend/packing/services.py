@@ -184,6 +184,25 @@ def correct(actor, pk, quantity, reason, replacement_key):
     CorrectionRequest.objects.filter(capture=event,resolved=False).update(resolved=True)
     return replacement
 
+@transaction.atomic
+def set_capture_history_visibility(actor, pk, hidden, reason):
+    require(actor, 'plan')
+    lock_ledger()
+    reason = str(reason or '').strip()
+    if not reason:
+        raise ValidationError('Indica el motivo del cambio en el historial.')
+    event = Capture.objects.select_for_update().select_related('target__part','target__program').get(pk=pk)
+    if not event.voided:
+        raise ValidationError('Solo se pueden quitar del historial capturas anuladas. Corrige primero la captura.')
+    if event.hidden_from_history == hidden:
+        return event
+    event.hidden_from_history = hidden
+    event.save(update_fields=['hidden_from_history'])
+    audit(actor, 'history_hide' if hidden else 'history_restore', event, reason,
+          capture=event.pk, quantity=event.quantity, part=event.target.part.number,
+          demand=event.target_id, operational_date=str(event.operational_date), hidden=hidden)
+    return event
+
 def demand_queryset(user, params, working=False, include_archived=False):
     require(user,'consult')
     qs=Demand.objects.select_related('program__group','part').order_by('priority','program__year','program__week','id')

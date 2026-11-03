@@ -12,6 +12,8 @@ Para Excel usar Importaciones. Primero puede dejarse hoja vacía para obtener in
 
 Una revisión modifica vigente con motivo, no la cantidad física. En Balance el engrane del renglón permite revisar demanda. En Historial aplicar excedente exige el ID del renglón compatible y cantidad; si no hay pendiente/crédito o es otro ámbito se rechaza. Las capturas y saldos originales permanecen identificados. Las correcciones conservan evento original anulado, reemplazo y asignaciones reversadas, incluso si el crédito se aplicó a otra semana.
 
+En Historial, Planeación puede quitar del listado una captura anulada con motivo; queda conservada en auditoría y no cambia los balances. Usa el filtro **Fuera del historial** para consultarla y restaurarla. Para retirar una captura activa, primero corrígela y déjala anulada.
+
 En Administración revisar solicitudes, auditoría y estado de Universo; ejecutar sincronización cuando sea necesario. La app continúa con piezas conocidas si la API no responde. No se crean libremente piezas desde Operador.
 
 Emitir cortes de los filtros actuales; cada versión conserva lo entregado. Cerrar una fecha impide cambiar su operación. Reabrir con motivo antes del ajuste autorizado; emitir una versión nueva después. Las conciliaciones de Excel registran diferencias y no modifican producción por sí mismas.

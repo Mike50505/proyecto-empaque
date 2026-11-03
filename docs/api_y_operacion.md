@@ -12,6 +12,7 @@ La SPA y Django se sirven bajo un mismo origen. Autenticación por sesión Djang
 | POST /api/captures/ID/release/ | Calidad libera una vez |
 | POST /api/captures/ID/correct/ | Planeación revierte/reemplaza |
 | POST /api/captures/ID/request-correction/ | Solicitud de operador |
+| POST /api/captures/ID/hide-from-history/ o restore-to-history/ | Planeación quita/restaura capturas anuladas en el historial |
 | POST /api/demands/ID/revise/ | Revisar demanda con motivo |
 | POST /api/transfer/ | Asignar crédito de captura o saldo inicial a demanda compatible |
 | POST /api/imports/ | Multipart file, mode, mapping JSON; previsualización |

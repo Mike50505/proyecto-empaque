@@ -100,7 +100,7 @@ def employee_create(request):
 def balance(request): return Response(s.balance(request.user,request.query_params))
 
 def event_data(e):
-    return {'id':e.pk,'key':str(e.key),'quantity':e.quantity,'part':e.target.attributes_snapshot.get('number',e.target.part.number),'demand':e.target_id,'client':client_group(e.target.program.client),'scope':e.target.program.scope,'year':e.target.program.year,'week':e.target.program.week,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer_payroll or (e.packer.payroll if e.packer else ''),'inspector':e.inspector_payroll or (e.inspector.payroll if e.inspector else None),'actor':e.actor.get_username(),'released':e.released,'release_mode':e.release_mode,'voided':e.voided,'credit':s.available(e),'allocations':list(e.allocations.values('demand','quantity','active','created_at')),'notes':e.notes}
+    return {'id':e.pk,'key':str(e.key),'quantity':e.quantity,'part':e.target.attributes_snapshot.get('number',e.target.part.number),'demand':e.target_id,'client':client_group(e.target.program.client),'scope':e.target.program.scope,'year':e.target.program.year,'week':e.target.program.week,'effective_at':e.effective_at,'created_at':e.created_at,'operational_date':e.operational_date,'shift':e.shift.code,'packer':e.packer_payroll or (e.packer.payroll if e.packer else ''),'inspector':e.inspector_payroll or (e.inspector.payroll if e.inspector else None),'actor':e.actor.get_username(),'released':e.released,'release_mode':e.release_mode,'voided':e.voided,'hidden_from_history':e.hidden_from_history,'credit':s.available(e),'allocations':list(e.allocations.values('demand','quantity','active','created_at')),'notes':e.notes}
 
 @api_view(['GET','POST'])
 @guarded
@@ -110,6 +110,11 @@ def captures(request):
     qs=Capture.objects.select_related('target__part','target__program','packer','inspector','shift','actor').order_by('-id')
     allowed=s.demand_queryset(request.user,{},include_archived=True)
     qs=qs.filter(target__in=allowed)
+    if request.query_params.get('state')=='hidden':
+        s.require(request.user,'plan')
+        qs=qs.filter(hidden_from_history=True)
+    else:
+        qs=qs.filter(hidden_from_history=False)
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
     if request.query_params.get('packer'): qs=qs.filter(Q(packer_payroll=request.query_params['packer'])|Q(packer__payroll=request.query_params['packer']))
@@ -150,6 +155,10 @@ def capture_action(request,pk,action):
     if action=='correct':
         e=s.correct(request.user,pk,request.data['quantity'],request.data['reason'],request.data['key'])
         return Response(event_data(e) if e else {'voided':True})
+    if action in ['hide-from-history','restore-to-history']:
+        hidden=action=='hide-from-history'
+        event=s.set_capture_history_visibility(request.user,pk,hidden,request.data.get('reason'))
+        return Response(event_data(event))
     if action=='request-correction':
         s.require(request.user,'plan')
         event=Capture.objects.get(pk=pk)
@@ -357,6 +366,9 @@ def template(request):
 def production_export(request):
     s.require(request.user,'consult')
     qs=Capture.objects.filter(target__in=s.demand_queryset(request.user,request.query_params,include_archived=True)).select_related('target__part','packer','inspector','actor','shift')
+    if request.query_params.get('state')=='hidden':
+        s.require(request.user,'plan'); qs=qs.filter(hidden_from_history=True)
+    else: qs=qs.filter(hidden_from_history=False)
     if request.query_params.get('date'): qs=qs.filter(operational_date=request.query_params['date'])
     if request.query_params.get('shift'): qs=qs.filter(shift__code=request.query_params['shift'])
     return xlsx_response([['Folio','Pieza','Cantidad','Fecha efectiva','Registro','Fecha operativa','Turno','Empacador','Inspector','Capturista','Liberada','Anulada']]+[[e.pk,e.target.part.number,e.quantity,e.effective_at.isoformat(),e.created_at.isoformat(),str(e.operational_date),e.shift.code,e.packer_payroll or (e.packer.payroll if e.packer else ''),e.inspector_payroll or (e.inspector.payroll if e.inspector else ''),e.actor.username,e.released,e.voided] for e in qs],'movimientos-empaque')
