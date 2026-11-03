@@ -102,9 +102,9 @@ El [dashboard rediseñado](docs/dashboard_redisenado.md) incluye producción dia
 
 ## Excedentes y semanas
 
-Se retiró la función Pasar a la siguiente semana. Cada orden conserva su semana original; las capturas nuevas se aplican solamente a esa orden hasta cubrirla. La cantidad sobrante se consulta en **Excedentes**, con pieza, cliente, destino, orden y semana de origen, folio, fecha y nóminas. Incluye capturas liberadas y saldos iniciales con remanente, incluso si su orden fue retirada. No incluye capturas pendientes o anuladas.
+**Pasar excedente a la siguiente semana** permite a Admin y Planer aplicar solo las piezas liberadas sobrantes a las órdenes compatibles publicadas en la siguiente semana ISO. No mueve pendientes, no cambia la semana de las órdenes y no crea producción nueva. La aplicación respeta la pieza, el cliente, el destino y el pendiente por empacar; el resto permanece disponible. El botón solo aparece en órdenes con excedente. La cantidad sobrante se consulta en **Excedentes**, con pieza, cliente, destino, orden y semana de origen, folio, fecha y nóminas. Incluye capturas liberadas y saldos iniciales con remanente, incluso si su orden fue retirada. No incluye capturas pendientes o anuladas.
 
-El saldo mostrado resta las asignaciones activas ya realizadas. Consultar Excedentes, publicar o importar programas no aplica sobrantes a otra orden. Los registros de traslados y asignaciones anteriores se conservan como historial; no se eliminan ni se revierten. No hay migraciones de datos para este cambio.
+El saldo mostrado resta las asignaciones activas ya realizadas. Consultar Excedentes, publicar o importar programas no aplica sobrantes a otra orden. Los registros de traslados y asignaciones se conservan como historial. La aplicación es idempotente y respeta los periodos cerrados. Si no hay una orden compatible en la siguiente semana, el saldo permanece en Excedentes. Solo se aplica mediante confirmación explícita. No hay migraciones de datos para este cambio.
 
 
 ## Usuarios y roles dentro de Empaques

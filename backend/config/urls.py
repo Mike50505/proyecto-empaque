@@ -16,6 +16,7 @@ urlpatterns=[
     path('api/demands/<int:pk>/',api.demand_detail),
     path('api/surplus/apply/',api.apply_surplus),
     path('api/surplus/',api.surplus_inventory),
+    path('api/demands/<int:pk>/next-week/',api.next_week),
     path('api/imports/',api.imports),path('api/imports/<int:pk>/',api.import_detail),
     path('api/cuts/',api.cuts),path('api/cuts/<int:pk>/',api.cut_detail),path('api/reopen/',api.reopen),
     path('api/audit/',api.audit),path('api/universe/sync/',api.sync),

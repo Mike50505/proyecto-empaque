@@ -38,15 +38,19 @@ class SurplusInventoryTests(TestCase):
         inventory(self.actor,{})
         self.assertEqual(s.available(event),30);self.assertEqual(s.applied(target),0)
 
-    def test_old_carry_metadata_does_not_move_balances_or_new_captures(self):
-        origin=self.line(100);origin.carry_to=date.fromisocalendar(2026,44,1);origin.save()
+    def test_completed_orders_can_apply_only_available_surplus(self):
+        origin=self.line(100)
         target=self.line(200,44)
         event=self.pack(origin,130)
         self.assertEqual(s.applied(origin),100);self.assertEqual(s.applied(target),0)
         self.assertEqual(s.available(event),30)
         self.assertEqual([r['id'] for r in s.balance(self.actor,{'year':'2026','week':'43'})['rows']],[origin.pk])
         self.assertEqual([r['id'] for r in s.balance(self.actor,{'year':'2026','week':'44'})['rows']],[target.pk])
-        self.assertEqual(self.client.post(f'/api/demands/{origin.pk}/next-week/',{},format='json').status_code,404)
+        result=self.client.post(f'/api/demands/{origin.pk}/next-week/',{'key':str(uuid.uuid4()),'year':2026,'week':43},format='json')
+        self.assertEqual(result.status_code,200,result.data)
+        self.assertEqual(result.data['applied_credit'],30)
+        self.assertEqual(s.applied(origin),100)
+        self.assertEqual(s.applied(target),30)
 
     def test_publication_does_not_consume_existing_surplus(self):
         origin=self.line(100);origin.carry_to=date.fromisocalendar(2026,44,1);origin.save()

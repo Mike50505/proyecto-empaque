@@ -253,6 +253,13 @@ def apply_surplus(request):
     return Response(apply_all(request.user))
 
 
+@api_view(['POST'])
+@guarded
+def next_week(request,pk):
+    from .week_carry import move
+    return Response(move(request.user,pk,request.data))
+
+
 @api_view(['GET'])
 @guarded
 def surplus_inventory(request):

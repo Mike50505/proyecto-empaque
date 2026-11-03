@@ -22,6 +22,7 @@ pages.push(['Usuarios',UsersIcon]);
 titles.Usuarios=['Usuarios y roles','Administra las cuentas de acceso a Empaques.'];
 const canAccessPage=(name,roles)=>name==='Usuarios'?!!roles.manage_users:roles.plan||['Inicio','Órdenes','Historial'].includes(name);
 const initialFilters={group:'',year:'',week:'',client:'',subclient:'',scope:'',search:'',view:'week',status:'all',publication:'published',priority:'',date:''};
+const nextWeekFor=row=>{const monday=new Date(Date.UTC(Number(row.year),0,4));monday.setUTCDate(monday.getUTCDate()-((monday.getUTCDay()+6)%7)+(Number(row.week)-1)*7+7);const thursday=new Date(monday);thursday.setUTCDate(monday.getUTCDate()+3);const year=thursday.getUTCFullYear();const first=new Date(Date.UTC(year,0,4));first.setUTCDate(first.getUTCDate()-((first.getUTCDay()+6)%7));return {next_year:year,next_week:1+Math.round((monday-first)/604800000)}};
 const localInput=d=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
 const shiftFor=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '';const minute=d.getHours()*60+d.getMinutes();return minute>=278&&minute<997?'A':'B'};
 const operationalDateFor=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '';if(d.getHours()*60+d.getMinutes()<=277)d.setDate(d.getDate()-1);return localInput(d).slice(0,10)};
@@ -38,6 +39,7 @@ function Modal({title,onClose,children}){
 export default function App(){
   const [session,setSession]=useState(null),[page,setPage]=useState(()=>{try{const hash=decodeURIComponent(location.hash.slice(1));const p=['Capturar','Balance'].includes(hash)?'Órdenes':hash;return pages.some(([name])=>name===p)?p:'Inicio'}catch{return 'Inicio'}}),[catalog,setCatalog]=useState(null),[data,setData]=useState(null),[error,setError]=useState(''),[connectionError,setConnectionError]=useState(''),[message,setMessage]=useState(''),[connected,setConnected]=useState(true),[captureRow,setCaptureRow]=useState(null),[operation,setOperation]=useState(null),[mobile,setMobile]=useState(false);
   const [tv,setTv]=useState(new URLSearchParams(location.search).get('tv')==='1');
+  const [weekMove,setWeekMove]=useState(null),[movingWeekId,setMovingWeekId]=useState(null),[weekMoveError,setWeekMoveError]=useState('');
   useEffect(()=>{window.scrollTo(0,0)},[page]);
   const balanceRequest=useRef(0);
   const [filters,setFilters]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem('mesa-filters')||'{}'),client=normalizeClientGroup(saved.client),subclient=saved.subclient||(saved.client&&client!==saved.client?saved.client:'');return {...initialFilters,...saved,client,subclient,group:''}}catch{return initialFilters}});
@@ -55,6 +57,15 @@ export default function App(){
   useEffect(()=>{if(message){const t=setTimeout(()=>setMessage(''),9000);return()=>clearTimeout(t)}},[message]);
   const change=(key,value)=>setFilters(f=>({...f,[key]:value,...(key==='client'?{subclient:''}:{})}));
   const mutate=async(path,body,success,method='POST')=>{try{const result=await api(path,{method,body});setMessage(success);await load();await loadCatalog();return result}catch(e){setError(e.message);throw e}};
+  const moveWeek=async()=>{
+    if(movingWeekId!=null||!weekMove)return;
+    const {row,key}=weekMove;setMovingWeekId(row.id);setWeekMoveError('');
+    try{
+      const result=await mutate(`demands/${row.id}/next-week/`,{key,year:row.year,week:row.week,expected_credit:Number(row.credit)},'');
+      setMessage(`${row.part}: ${n(result.applied_credit)} piezas de excedente aplicadas a ${result.year}/S${result.week}. ${n(result.remaining_credit)} permanecen en Excedentes.`);
+      setWeekMove(null);setFilters(current=>({...current,year:String(result.year),week:String(result.week),view:'week',status:'all'}));
+    }catch(error){setWeekMoveError(error.message)}finally{setMovingWeekId(null)}
+  };
   const toggleDisplayMode=async()=>{
     if(tv){setTv(false);if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});return}
     setTv(true);
@@ -82,7 +93,7 @@ export default function App(){
     {(error||connectionError)&&<Notice type="error">{error||connectionError}</Notice>}
     {!connected&&<Notice type="warning">Los datos visibles corresponden a la última consulta. El formulario conserva tu borrador; guardar requiere confirmación del servidor.</Notice>}
     {page==='Inicio'&&!tv&&<Overview rows={rows} catalog={catalog} session={session} onNavigate={setPage} onReset={()=>setFilters(initialFilters)} filtered={Object.entries(filters).some(([k,v])=>v&&initialFilters[k]!==v)} loading={!data}/>}
-    {page==='Órdenes'&&!tv&&<OrdersSheet rows={rows} catalog={catalog} filters={filters} onFilter={change} onClear={()=>setFilters(initialFilters)} onCapture={setCaptureRow} updatedAt={data?.updated_at} loading={!data} canCapture={session.roles.capture} canPlan={session.roles.plan} onImport={()=>setPage('Importaciones')} onRevise={r=>setOperation({kind:'revise',row:r})} onDeleteDemand={async r=>{if(!window.confirm(`¿Quitar ${r.part} · orden ${r.reference} del programa? Desaparecerá de Órdenes y sus registros históricos se conservarán.`))return;const reason=window.prompt('Motivo para retirar este número:');if(!reason?.trim())return;try{await mutate(`demands/${r.id}/`,{reason},`${r.part} retirado del programa. Sus registros se conservaron.`,'DELETE')}catch{}}} params={params} totals={total}/> }
+    {page==='Órdenes'&&!tv&&<OrdersSheet rows={rows} catalog={catalog} filters={filters} onFilter={change} onClear={()=>setFilters(initialFilters)} onCapture={setCaptureRow} updatedAt={data?.updated_at} loading={!data} canCapture={session.roles.capture} canPlan={session.roles.plan} onImport={()=>setPage('Importaciones')} onNextWeek={row=>{setWeekMoveError('');setWeekMove({row:{...row,...nextWeekFor(row)},key:crypto.randomUUID()})}} movingWeekId={movingWeekId} onRevise={r=>setOperation({kind:'revise',row:r})} onDeleteDemand={async r=>{if(!window.confirm(`¿Quitar ${r.part} · orden ${r.reference} del programa? Desaparecerá de Órdenes y sus registros históricos se conservarán.`))return;const reason=window.prompt('Motivo para retirar este número:');if(!reason?.trim())return;try{await mutate(`demands/${r.id}/`,{reason},`${r.part} retirado del programa. Sus registros se conservaron.`,'DELETE')}catch{}}} params={params} totals={total}/> }
     {page==='Dashboard'&&!tv&&<PackingDashboard rows={rows} totals={total} catalog={catalog} filters={filters} params={params} onFilter={change} onReset={()=>setFilters(initialFilters)} updatedAt={data?.updated_at} loading={!data} onOpenOrders={extra=>{setFilters(f=>({...f,...extra,date:'',publication:'published'}));setPage('Órdenes')}} onOpenHistory={date=>{setFilters(f=>({...f,date}));setPage('Historial')}}/>}
     {tv?<>
       <ClientPicker floor client={filters.client} subclient={filters.subclient} onChange={(client,subclient)=>{change('client',client);change('subclient',subclient)}}/>
@@ -103,6 +114,7 @@ export default function App(){
     {!tv&&page==='Administración'&&<Administration canManageUsers={session.roles.manage_users} onManageUsers={()=>setPage('Usuarios')} catalog={catalog} mutate={mutate} params={params} setError={setError}/>}
     </main><footer className="app-footer"><span>Empaques MESA</span><span>Planeación conectada con el piso de producción</span></footer></div>
     {captureRow&&<CaptureModal key={captureRow.id} orders={rows.filter(r=>r.published&&r.quantity>0)} onSelect={setCaptureRow} row={captureRow} catalog={catalog} session={session} onClose={()=>setCaptureRow(null)} onSave={async payload=>{const event=await mutate('captures/',payload,'Captura confirmada. Folio #');setMessage(`Captura #${event.id} confirmada · ${n(event.quantity)} piezas · ${event.released?'Liberación declarada':'Pendiente de liberación'} · Excedente ${n(event.credit)}`);setCaptureRow(null)}}/>}
+    {weekMove&&<Modal title="Pasar excedente a la siguiente semana" onClose={()=>{if(movingWeekId==null)setWeekMove(null)}}><p><b>{weekMove.row.part}</b> / {weekMove.row.client} / {weekMove.row.scope||'Sin destino'}</p><p>Semana {weekMove.row.year}/S{weekMove.row.week} → <b>{weekMove.row.next_year}/S{weekMove.row.next_week}</b></p><p>Excedente disponible: <b>{n(weekMove.row.credit)} piezas</b>.</p><p>Se aplicará solo el excedente disponible a las órdenes compatibles publicadas de la siguiente semana, hasta cubrir su pendiente por empacar. Los pendientes de la semana original no se trasladan.</p><p>El sobrante que no se pueda aplicar permanecerá en Excedentes. No se registrará producción nueva.</p>{weekMoveError&&<Notice type="error">{weekMoveError}</Notice>}<div className="modal-actions"><button type="button" className="secondary" disabled={movingWeekId!=null} onClick={()=>setWeekMove(null)}>Cancelar</button><button type="button" className="primary" disabled={movingWeekId!=null} onClick={moveWeek}>{movingWeekId!=null?'Aplicando…':'Confirmar excedente'}</button></div></Modal>}
     {operation&&<OperationModal operation={operation} onClose={()=>setOperation(null)} mutate={mutate}/>}
   </div>
 }

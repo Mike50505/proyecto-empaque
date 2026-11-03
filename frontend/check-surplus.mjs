@@ -13,7 +13,7 @@ try {
    if(route.request().method()!=='GET')throw new Error('This check must be read-only');
    if(url.pathname==='/api/session/')data={authenticated:true,username:'synthetic',roles:{consult:true,capture:true,plan:true,release:true},csrf:'test'};
    else if(url.pathname==='/api/catalog/')data={today:'2026-10-28',current_year:2026,groups:[],parts:[],employees:[],shifts:[],clients:['LENNOX 1'],programs:[{id:1,client:'LENNOX 1',scope:'SLP',year:2026,week:43,published:true}],work_weeks:[]};
-   else if(url.pathname==='/api/balance/')data={rows:[row,{...row,id:2,part:'PENDING',reference:'TEST-2',applied:80,pending:20},{...row,id:3,part:'AWAITING-RELEASE',reference:'TEST-3',applied:0,pending:100,packed:100,pending_release:100}],totals:{quantity:300,applied:180,packed:330,pending_release:100,pending:120,credit:30},updated_at:new Date().toISOString()};
+   else if(url.pathname==='/api/balance/')data={rows:[row,{...row,id:2,part:'PENDING',reference:'TEST-2',applied:80,pending:20,credit:0},{...row,id:3,part:'AWAITING-RELEASE',reference:'TEST-3',applied:0,pending:100,packed:100,pending_release:100,credit:0}],totals:{quantity:300,applied:180,packed:330,pending_release:100,pending:120,credit:30},updated_at:new Date().toISOString()};
    else if(url.pathname==='/api/surplus/')data=url.searchParams.get('search')==='NONE'?{rows:[],total:0}:{rows:[{...row,id:'capture-1',source:1,kind:'Captura',date:'2026-10-28',quantity:30,packer:'00007',inspector:'00045'}],total:30};
    else data=[];
    await route.fulfill({json:data});
@@ -22,7 +22,7 @@ try {
   await expect(page.getByRole('heading',{name:'Empaque, de principio a fin',exact:true})).toBeVisible();
   if(width<600)await page.getByRole('button',{name:'Abrir navegación'}).click();
   await page.getByRole('button',{name:'Órdenes',exact:true}).click();
-  await expect(page.getByRole('button',{name:/a la siguiente semana/})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/a la siguiente semana/})).toHaveCount(1);
   await expect(page.locator('.unified-orders')).not.toContainText('trasladado');
   await expect(page.locator('.unified-orders .order-completed')).toHaveCount(1);
   await expect(page.locator('.unified-orders .completed-order-badge')).toHaveText('Terminada');
@@ -42,7 +42,7 @@ try {
   await page.getByRole('button',{name:'Limpiar filtros',exact:true}).click();
   await expect(page.locator('.surplus-panel tbody')).toContainText('EXCESS-01');
   expect(errors).toEqual([]);
-  console.log(`PASS ${width}: surplus inventory, filters and empty state; next-week action removed.`);
+  console.log(`PASS ${width}: surplus inventory and filters; only orders with surplus offer next-week transfer.`);
   await page.close();
  }
 } finally {await browser.close();}
