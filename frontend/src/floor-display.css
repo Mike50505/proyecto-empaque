@@ -167,3 +167,16 @@ body:has(.app.tv){overflow:hidden}
 /* All floor orders remain in one manually scrollable table. */
 .tv .table-scroll.floor-table { overflow-y:auto; overflow-x:auto; scrollbar-gutter:stable; touch-action:pan-x pan-y; overscroll-behavior:contain; }
 .tv .table-scroll.floor-table:focus-visible { outline:2px solid var(--blue); outline-offset:-2px; }
+
+/* Search stays available when the full filter panel is hidden in floor mode. */
+.tv .floor-search-control{position:relative;display:flex;align-items:center;gap:8px;width:clamp(180px,21vw,310px);min-width:0;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted)}
+.tv .floor-part-options{position:absolute;top:calc(100% + 8px);left:0;right:0;z-index:100;max-height:280px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 24px #0003;padding:5px}
+.tv .floor-part-options button{display:block;width:100%;text-align:left;border:0;border-radius:5px;background:transparent;color:var(--text);padding:10px;font-size:13px;min-height:38px}
+.tv .floor-part-options button:hover,.tv .floor-part-options button.active{background:var(--soft);outline:2px solid var(--blue);outline-offset:-2px}
+.tv .floor-part-options p{margin:8px;font-size:12px;white-space:normal}
+.tv .floor-search-control:focus-within{border-color:var(--blue);outline:2px solid var(--blue);outline-offset:2px}
+.tv .floor-search-control>svg{flex-shrink:0}.tv .floor-search-control input{width:100%;min-width:0;height:100%;border:0;background:transparent;color:var(--text);padding:0;font-size:12px;outline:none}
+.tv .floor-search-control input::-webkit-search-cancel-button{display:none}.tv .floor-search-clear{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;min-height:0;border:0;border-radius:5px;padding:0;background:transparent;color:var(--muted)}
+.tv .floor-search-clear:hover{background:var(--soft);color:var(--text)}
+@media(max-width:1000px){.tv .suite-header{flex-wrap:wrap;gap:8px}.tv .suite-actions{flex-wrap:wrap;justify-content:flex-end;gap:8px}.tv .floor-search-control{width:190px}}
+@media(max-width:600px){.tv .suite-actions{width:100%;margin-left:0;justify-content:flex-start}.tv .floor-search-control{flex:1 1 100%;width:100%}}

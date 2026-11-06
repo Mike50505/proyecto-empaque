@@ -8,9 +8,13 @@ try {
   const page=await browser.newPage({viewport:{width,height:900}});
   await page.clock.install();
   const rows=Array.from({length:80},(_,index)=>({id:index+1,part:`TEST-${index+1}`,reference:`ORDER-${index+1}`,client:'LENNOX 1',scope:'SLP',year:2026,week:44,quantity:100,packed:0,applied:0,pending:100,packing_pending:100,pending_release:0,credit:0,published:true,priority:2}));
+  let lastBalanceQuery;
   await page.route('**/api/**',route=>{
-   const path=new URL(route.request().url()).pathname;
-   const data=path==='/api/session/'?{authenticated:true,username:'synthetic',roles:{consult:true,capture:true,plan:true,release:true}}:path==='/api/catalog/'?{programs:[{year:2026,week:44,published:true,client:'LENNOX 1'}],parts:[],groups:[],work_weeks:[]}:path==='/api/balance/'?{rows,totals:{quantity:8000,pending:8000,applied:0},updated_at:new Date().toISOString()}:[];
+   const url=new URL(route.request().url()),path=url.pathname;
+   if(path==='/api/balance/')lastBalanceQuery=url.searchParams;
+   const query=url.searchParams.get('search')?.toLowerCase()||'';
+   const filtered=rows.filter(row=>row.part.toLowerCase().includes(query));
+   const data=path==='/api/session/'?{authenticated:true,username:'synthetic',roles:{consult:true,capture:true,plan:true,release:true}}:path==='/api/catalog/'?{programs:[{year:2026,week:44,published:true,client:'LENNOX 1'}],parts:[...rows.map(row=>({id:row.id,number:row.part,universe_id:String(row.id),customer:'LENNOX 1',attributes:{active:true}})),{id:999,number:'INACTIVE',universe_id:'999',customer:'LENNOX 1',attributes:{active:false}}],groups:[],work_weeks:[]}:path==='/api/balance/'?{rows:filtered,totals:{quantity:filtered.length*100,pending:filtered.length*100,applied:0},updated_at:new Date().toISOString()}:[];
    return route.fulfill({json:data});
   });
   await page.goto((process.argv[2]||'http://127.0.0.1:58080/')+'?tv=1');
@@ -28,6 +32,19 @@ try {
   expect(await table.evaluate(element=>element.scrollTop)).toBe(position);
   await table.focus();await page.keyboard.press('End');
   await expect.poll(()=>table.evaluate(element=>element.scrollTop+element.clientHeight>=element.scrollHeight-2)).toBe(true);
+  await page.locator('.floor-week-control select').selectOption('44');
+  const search=page.locator('.floor-search-control input');
+  await expect(search).toBeVisible();
+  await search.fill('INACTIVE');await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(0);
+  await search.fill('TEST-8');await expect(page.getByRole('option',{name:'TEST-80',exact:true})).toBeVisible();
+  await page.getByRole('option',{name:'TEST-80',exact:true}).click();await expect(search).toHaveValue('TEST-80');
+  await search.fill('TEST-80');await search.press('ArrowDown');await search.press('Enter');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await expect(table.locator('tbody tr')).toHaveCount(1);await expect(table).toContainText('TEST-80');
+  expect(lastBalanceQuery.get('search')).toBe('TEST-80');expect(lastBalanceQuery.get('week')).toBe('44');
+  await page.locator('.floor-search-clear').click();await expect(search).toHaveValue('');
+  await expect(table.locator('tbody tr')).toHaveCount(80);await expect(page.locator('.app.tv')).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   console.log(`PASS ${width}: all 80 orders, manual wheel/keyboard scroll, no rotation or reset after refresh.`);
   await page.close();
  }

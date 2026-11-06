@@ -46,12 +46,12 @@ def resolve_part_by_number(number, selected_id=None):
         candidates=[part for part in candidates if str(part.pk)==str(selected_id)]
     active=[part for part in candidates if part.attributes.get('active') is not False]
     if len(active)>1:
-        raise ValidationError(f'La pieza {number} tiene varias identidades en Universo Ramos. Selecciona la identidad correcta antes de importar.')
+        raise ValidationError(f'La pieza {number} tiene varias identidades en Universo Ramos. Selecciona la identidad correcta antes de continuar.')
     if len(active)==1:
         return validate_part_customer(active[0],active[0].customer)
     if candidates:
         raise ValidationError(f'La pieza {number} está inactiva en Universo Ramos.')
-    raise ValidationError(f'La pieza {number} no está disponible en el catálogo validado de Universo Ramos. Sincroniza el catálogo antes de importar.')
+    raise ValidationError(f'La pieza {number} no está disponible en el catálogo validado de Universo Ramos. Sincroniza el catálogo antes de continuar.')
 
 
 def validate_program(program):

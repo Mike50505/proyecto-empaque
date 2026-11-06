@@ -8,7 +8,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from .models import *
-from .part_validation import validate_part_customer
+from .part_validation import validate_part_customer, resolve_part_by_number
 from .client_groups import client_group, client_filter
 
 def require(user, role):
@@ -125,6 +125,8 @@ def capture_extra(actor, payload):
     part_number=str(payload.get('part_number','')).strip()
     if not part_number or len(part_number)>120:
         raise ValidationError('Indica un número de parte de hasta 120 caracteres.')
+    part=resolve_part_by_number(part_number,payload.get('part_id'))
+    part_number=part.number
     qty=positive(payload.get('quantity'))
     effective=parse_time(payload.get('effective_at'))
     local_effective=timezone.localtime(effective)
@@ -146,6 +148,7 @@ def capture_extra(actor, payload):
         shift=Shift.objects.get(code=shift_code),packer_payroll=packer,
         inspector_payroll=inspector,actor=actor,notes=str(payload.get('notes','')))
     audit(actor,'extra_capture',event,'Captura extra fuera de orden',part_number=part_number,
+        part_id=part.pk,universe_id=part.universe_id,
         quantity=qty,operational_date=str(operational_date),shift=shift_code,
         packer_payroll=packer,inspector_payroll=inspector)
     return event
