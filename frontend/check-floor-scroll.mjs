@@ -32,6 +32,8 @@ try {
   expect(await table.evaluate(element=>element.scrollTop)).toBe(position);
   await table.focus();await page.keyboard.press('End');
   await expect.poll(()=>table.evaluate(element=>element.scrollTop+element.clientHeight>=element.scrollHeight-2)).toBe(true);
+  await expect(page.locator('.floor-filter-row .floor-week-control')).toBeVisible();
+  expect(await page.locator('.floor-filter-row').evaluate(row=>{const tabs=row.querySelector('.group-tabs').getBoundingClientRect(),week=row.querySelector('.floor-week-control').getBoundingClientRect();return week.right<=tabs.left&&Math.abs(week.top-tabs.top)<40})).toBe(true);
   await page.locator('.floor-week-control select').selectOption('44');
   const search=page.locator('.floor-search-control input');
   await expect(search).toBeVisible();

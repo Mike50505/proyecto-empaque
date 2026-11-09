@@ -3,6 +3,7 @@ import {chromium,expect} from '@playwright/test';
 const browser=await chromium.launch({headless:true,channel:'chrome'});
 try{
  const page=await browser.newPage({viewport:{width:1280,height:1000}}),sent=[];
+ page.setDefaultTimeout(10000);
  const parts=[{id:1,number:'VALID-001',customer:'LENNOX 1',scope:'SLP',universe_id:'official-1',provisional:false,attributes:{active:true}},
  {id:2,number:'VALID-002',customer:'RHEEM',scope:'FALCON',universe_id:'official-2',provisional:false,attributes:{active:true}},
  {id:3,number:'INACTIVE-001',customer:'LENNOX 1',universe_id:'official-3',provisional:false,attributes:{active:false}},
@@ -14,7 +15,7 @@ try{
   if(path==='/api/extras/'&&route.request().method()==='POST'){sent.push(route.request().postDataJSON());return route.fulfill({status:201,json:{id:'EX-TEST'}})}
   return route.fulfill({json:path==='/api/session/'?{authenticated:true,username:'synthetic',roles:{consult:true,capture:true,plan:true}}:path==='/api/catalog/'?{parts,programs:[],groups:[],work_weeks:[]}:path==='/api/balance/'?{rows:[],totals:{},updated_at:new Date().toISOString()}:[]});
  });
- await page.goto((process.argv[2]||'http://127.0.0.1:55175/')+'#'+encodeURIComponent('Órdenes'));
+ await page.goto((process.argv[2]||'http://127.0.0.1:55175/')+(process.argv.includes('--tv')?'?tv=1':'')+'#'+encodeURIComponent('Órdenes'));
  await page.getByRole('button',{name:'Añadir extra',exact:true}).click();
  const dialog=page.getByRole('dialog'),input=dialog.getByRole('combobox',{name:'Número de parte',exact:true});
  const review=dialog.getByRole('button',{name:'Revisar extra',exact:true});
